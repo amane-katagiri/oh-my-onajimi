@@ -5,7 +5,7 @@ import { parseArgs } from "node:util";
 import { build } from "../src/build.js";
 import { lint } from "../src/lint.js";
 import { guard } from "../src/guard.js";
-import { defaultRoot } from "../src/paths.js";
+import { resolveRoot } from "../src/paths.js";
 import { SETS, loadCorpus, writeSplit } from "../src/corpus.js";
 import { analyzeProse } from "../src/prose.js";
 import { runControl } from "../src/control.js";
@@ -14,12 +14,14 @@ import { renderEval, runEval } from "../src/eval.js";
 import { writeReview } from "../src/review.js";
 import { runPipeline } from "../src/pipeline.js";
 import { initAuthor } from "../src/init.js";
+import { importAuthor } from "../src/import-author.js";
 
 const USAGE = `使い方:
   onajimi build --author <name> [--check]
   onajimi lint --author <name> <file>
   onajimi guard <before> <after>
   onajimi init --author <name> [--posts <dir>]  corpus.yml のひな形と空の profile.yml を作る
+  onajimi import --author <name> --from <dir>  別の root から profile.yml などを取り込んで build する（corpus/ は取り込まない）
   onajimi split --author <name>              コーパスを選んで split.yml に分ける（一度だけ）
   onajimi corpus --author <name>             選んだ記事の本数と字数
   onajimi control --author <name> --runner <name> [--set profile|dev|test|all] [--only a,b] [--limit n] [--delay 秒] [--dry-run]
@@ -27,7 +29,7 @@ const USAGE = `使い方:
   onajimi review --author <name>             profile/review.md を書く（提案と dev での指摘）
   onajimi pipeline --author <name> [--limit n] [--delay 秒]   split → control（全 runner）→ profile → build → review
   onajimi eval --author <name> [--set test|dev|profile]
-共通: --root <dir>（authors/ のあるディレクトリ）`;
+共通: --root <dir>（authors/ のあるディレクトリ。省略時は環境変数 ONAJIMI_ROOT、それもなければこのリポジトリ）`;
 
 const main = async (argv) => {
   const [command, ...rest] = argv;
@@ -46,9 +48,11 @@ const main = async (argv) => {
       paired: { type: "boolean", default: false },
       out: { type: "string" },
       posts: { type: "string" },
-      root: { type: "string", default: defaultRoot },
+      from: { type: "string" },
+      root: { type: "string" },
     },
   });
+  const root = resolveRoot(values.root);
   const needAuthor = () => {
     if (!values.author) {
       throw new Error("--author が要る");
@@ -57,7 +61,7 @@ const main = async (argv) => {
   };
 
   if (command === "build" && positionals.length === 0) {
-    const result = build({ root: values.root, author: needAuthor(), check: values.check });
+    const result = build({ root: root, author: needAuthor(), check: values.check });
     if (values.check && result.stale.length > 0) {
       for (const name of result.stale) {
         console.log(`generated/${name} が profile.yml と食い違っている。onajimi build を実行する。`);
@@ -67,7 +71,7 @@ const main = async (argv) => {
     return 0;
   }
   if (command === "lint" && positionals.length === 1) {
-    const lines = await lint({ root: values.root, author: needAuthor(), file: positionals[0] });
+    const lines = await lint({ root: root, author: needAuthor(), file: positionals[0] });
     for (const line of lines) {
       console.log(line);
     }
@@ -82,12 +86,12 @@ const main = async (argv) => {
     return problems.length > 0 ? 1 : 0;
   }
   if (command === "split" && positionals.length === 0) {
-    const split = writeSplit({ root: values.root, author: needAuthor() });
+    const split = writeSplit({ root: root, author: needAuthor() });
     console.log(`profile ${split.profile.length} 本、dev ${split.dev.length} 本、test ${split.test.length} 本`);
     return 0;
   }
   if (command === "corpus" && positionals.length === 0) {
-    const corpus = loadCorpus(values.root, needAuthor());
+    const corpus = loadCorpus(root, needAuthor());
     for (const set of SETS) {
       const chars = corpus[set].reduce((sum, post) => sum + analyzeProse(post.text, { skipParagraphs: corpus.config.skipParagraphs }).chars, 0);
       const dates = corpus[set].map((post) => (post.meta.date ?? "").slice(0, 10));
@@ -100,7 +104,7 @@ const main = async (argv) => {
       throw new Error("--runner が要る");
     }
     const summary = await runControl({
-      root: values.root,
+      root: root,
       author: needAuthor(),
       runner: values.runner,
       set: values.set ?? "profile",
@@ -124,7 +128,7 @@ const main = async (argv) => {
     return summary.failed.length > 0 ? 1 : 0;
   }
   if (command === "profile" && positionals.length === 0) {
-    const result = await runProfile({ root: values.root, author: needAuthor(), paired: values.paired, outDir: values.out });
+    const result = await runProfile({ root: root, author: needAuthor(), paired: values.paired, outDir: values.out });
     const sides = Object.entries(result.sides)
       .map(([name, side]) => `${name} ${side.docs} 本 ${side.chars} 字`)
       .join("、");
@@ -136,19 +140,30 @@ const main = async (argv) => {
     return 0;
   }
   if (command === "init" && positionals.length === 0) {
-    for (const file of initAuthor({ root: values.root, author: needAuthor(), posts: values.posts })) {
+    for (const file of initAuthor({ root: root, author: needAuthor(), posts: values.posts })) {
       console.log(`${path.relative(process.cwd(), file)} を書いた。`);
     }
     return 0;
   }
+  if (command === "import" && positionals.length === 0) {
+    if (!values.from) {
+      throw new Error("--from が要る");
+    }
+    const result = importAuthor({ root, from: values.from, author: needAuthor() });
+    for (const file of result.copied) {
+      console.log(`${file} に写した。`);
+    }
+    console.log(`${result.generated} を作った。`);
+    return 0;
+  }
   if (command === "review" && positionals.length === 0) {
-    const result = await writeReview({ root: values.root, author: needAuthor() });
+    const result = await writeReview({ root: root, author: needAuthor() });
     console.log(`${path.relative(process.cwd(), result.file)} に ${result.lines} 行を書いた。`);
     return 0;
   }
   if (command === "pipeline" && positionals.length === 0) {
     return runPipeline({
-      root: values.root,
+      root: root,
       author: needAuthor(),
       limit: values.limit === undefined ? undefined : Number(values.limit),
       delaySeconds: values.delay === undefined ? undefined : Number(values.delay),
@@ -157,7 +172,7 @@ const main = async (argv) => {
     });
   }
   if (command === "eval" && positionals.length === 0) {
-    console.log(renderEval(await runEval({ root: values.root, author: needAuthor(), set: values.set ?? "test" })));
+    console.log(renderEval(await runEval({ root: root, author: needAuthor(), set: values.set ?? "test" })));
     return 0;
   }
   console.error(USAGE);

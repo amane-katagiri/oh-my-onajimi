@@ -1,14 +1,35 @@
 {
   "name": "textlint-rule-preset-onajimi",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
-  "main": "index.js",
+  "description": "筆者の書きぶりから作った辞書としきい値で、モデルっぽい言い回しや装飾の多さを指摘する textlint のプリセット",
+  "keywords": [
+    "textlint",
+    "textlintrule",
+    "japanese"
+  ],
+  "license": "MIT",
+  "author": "Amane Katagiri",
   "type": "commonjs",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "rules/",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=20.18.0"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
   "dependencies": {
     "kuromojin": "3.0.1",
-    "textlint-rule-preset-ai-words-ja": "1.2.1"
+    "morpheme-match-textlint": "2.0.6"
   },
   "devDependencies": {
-    "textlint": "15.8.0"
+    "@textlint/kernel": "15.8.0",
+    "@textlint/textlint-plugin-markdown": "15.8.0"
   }
 }

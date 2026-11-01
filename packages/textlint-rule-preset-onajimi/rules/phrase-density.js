@@ -1,24 +1,8 @@
 "use strict";
 
-const { tokenize } = require("kuromojin");
+const { createMatcher } = require("./matcher");
 
 const SKIPPED = ["BlockQuote", "Table", "Html", "Header", "CodeBlock", "Yaml"];
-
-const matchesAt = (tokens, at, conditions) =>
-  conditions.every((condition, offset) => {
-    const token = tokens[at + offset];
-    return token !== undefined && Object.keys(condition).every((key) => token[key] === condition[key]);
-  });
-
-const matchCount = (tokens, conditions) => {
-  let count = 0;
-  for (let at = 0; at + conditions.length <= tokens.length; at += 1) {
-    if (matchesAt(tokens, at, conditions)) {
-      count += 1;
-    }
-  }
-  return count;
-};
 
 const round = (value) => Number(value.toFixed(1));
 
@@ -36,10 +20,11 @@ module.exports = (context, options = {}) => {
       }
       chars += [...node.value.replace(/\s/g, "")].length;
       pending.push(
-        tokenize(node.value).then((tokens) => {
-          entries.forEach((entry, index) => {
-            counts[index] += matchCount(tokens, entry.tokens);
-          });
+        // 照合器は前の Str で途中まで合った状態を持ち越すので、ノードごとに作り直す。
+        createMatcher(entries)(node.value).then((results) => {
+          for (const result of results) {
+            counts[entries.indexOf(result.dict)] += 1;
+          }
         }),
       );
     },

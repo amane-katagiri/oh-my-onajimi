@@ -1,0 +1,9 @@
+{
+  "name": "onajimi",
+  "version": "0.1.0",
+  "description": "筆者の書き癖をプロファイルにして、書き終えた日本語の記事をその筆者に寄せる仕上げをする",
+  "author": {
+    "name": "Amane Katagiri"
+  },
+  "license": "MIT"
+}

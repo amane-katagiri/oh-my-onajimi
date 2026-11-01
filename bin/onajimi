@@ -1,0 +1,2 @@
+#!/usr/bin/env node
+import "../packages/onajimi/bin/onajimi.js";

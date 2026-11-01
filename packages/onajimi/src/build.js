@@ -152,7 +152,6 @@ const DECORATION_OPTIONS = {
 const textlintrc = ({ thresholds, allow, density }) => {
   const leaning = (file) => ({
     dictionaryPath: `./${file}`,
-    dictionaryMode: "override",
     ...(allow.length > 0 ? { allows: allow } : {}),
   });
   const decoration = Object.fromEntries(

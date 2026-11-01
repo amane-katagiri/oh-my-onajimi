@@ -1,0 +1,13 @@
+{
+  "rules": {
+    "preset-onajimi": {
+      "model-leaning": {
+        "dictionaryPath": "../model-leaning/dict.json",
+        "allows": [
+          "設定ファイルが静かに壊れ",
+          "/壊れていた/"
+        ]
+      }
+    }
+  }
+}

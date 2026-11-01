@@ -1,0 +1,14 @@
+{
+  "name": "oh-my-onajimi",
+  "owner": {
+    "name": "Amane Katagiri"
+  },
+  "description": "onajimi プラグインをローカルで試すためのマーケットプレイス",
+  "plugins": [
+    {
+      "name": "onajimi",
+      "source": "./",
+      "description": "筆者の書き癖をプロファイルにして、書き終えた日本語の記事をその筆者に寄せる仕上げをする"
+    }
+  ]
+}

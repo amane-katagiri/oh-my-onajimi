@@ -20,27 +20,34 @@
 ## 全体の形
 
 ```
-oh-my-onajimi/
-├─ packages/textlint-rule-preset-onajimi/   # textlint のルール集（CJS）
-│   ├─ index.js                # model-leaning / author-leaning / decoration-density
-│   ├─ rules/decoration-density.js
+oh-my-onajimi/                              # Claude Code プラグインのルート（npm の単一パッケージ。workspaces は使わない）
+├─ .claude-plugin/plugin.json / marketplace.json
+├─ bin/onajimi                 # packages/onajimi/bin/onajimi.js を呼ぶだけの入口
+├─ packages/textlint-rule-preset-onajimi/   # textlint のルール集（CJS）。単体で配れる形
+│   ├─ index.js                # model-leaning / author-leaning / decoration-density / phrase-density
+│   ├─ rules/matcher.js        # kuromojin + morpheme-match-textlint の照合（leaning と density で共有）
+│   ├─ rules/token-leaning.js  # 辞書の語を拾う（model-leaning と author-leaning の中身）
+│   ├─ rules/decoration-density.js / phrase-density.js
 │   └─ test/                   # 規則ごとの fires/clean fixture
-├─ packages/onajimi/                        # CLI（ESM）
-│   ├─ bin/onajimi.js          # lint / guard / control / profile / build / eval
+├─ packages/onajimi/                        # CLI（ESM）。ルール集は相対パスで読む
+│   ├─ bin/onajimi.js          # lint / guard / control / profile / build / eval / import
+│   ├─ src/lint.js             # .textlintrc.json を読み、ルールの実体を直接渡して textlint の kernel を動かす
 │   ├─ src/prose.js            # Markdown → 地の文（位置を元に戻せる）
 │   ├─ src/profile.js          # 対数オッズ比と文統計
 │   ├─ src/build.js            # profile.yml → 辞書としきい値の生成物
 │   └─ src/guard.js            # 数値・否定（v2 で助詞）
-├─ authors/<name>/
+├─ authors/<name>/             # 開発用の root。プラグインでは ${CLAUDE_PLUGIN_DATA}/authors/<name>/
 │   ├─ profile.yml             # 人が編集する唯一の元データ
 │   └─ generated/              # build の出力（--check で元データとの差を検査する）
-│       ├─ model-leaning.json  # ai-words-ja 形式
-│       ├─ author-leaning.json # ai-words-ja 形式
+│       ├─ model-leaning.json  # {entries: [{message, tokens}]}
+│       ├─ author-leaning.json # 同上
 │       ├─ orthography.yml     # prh 形式（表記ゆれだけを扱う）
-│       └─ .textlintrc.json
-├─ skills/onajimi/SKILL.md                   # 薄いスキル
+│       └─ .textlintrc.json    # 人が読むための設定。lint はモジュール解決に頼らずこれを読む
+├─ skills/onajimi/SKILL.md / skills/onajimi-profile/SKILL.md
 └─ notes/
 ```
+
+root は `--root`、`ONAJIMI_ROOT`、リポジトリの順に決める。プラグインは版ごとのキャッシュに写されるので、筆者のデータはそこに置かない。
 
 ## 1. textlint のルール集
 
@@ -49,6 +56,7 @@ oh-my-onajimi/
 - `--rulesdir` で読ませたルールには、`.textlintrc` のオプションが渡らない（`--print-config` で rule が空になった）。計画の初版は `--rulesdir` 前提だったので変える。ルールは preset のパッケージとして読ませる。
 - 辞書の項目は、複数トークンの連なりで書ける。`{surface_form:"静か"},{surface_form:"に"},{basic_form:"壊れる"}` で「静かに壊れ」を拾えた。`{basic_form:"確認"},{basic_form:"する"}` で「確認した」も拾えた。
 - 内部の rule は `require("textlint-rule-preset-ai-words-ja").default.rules["no-ai-words"]` で取れる。公開 API ではないので、バージョンを固定する。
+- その後、ai-words-ja への依存はやめ、同じ照合（kuromojin + morpheme-match-textlint）を rules/token-leaning.js に持った。辞書の形式と allows の意味（一致した範囲だけを見る）は同じ。組み込み辞書がないので dictionaryMode はなくした。
 
 ### ルール
 | ルール | 中身 | 既定の severity |
@@ -200,6 +208,12 @@ description: 日本語の記事を書き終えたあと、指定した筆者の�
 - 表記の組、後ろに続く語、指示への混入（`in_brief_docs` と `excluded_in_brief`）、他ジャンルでの頻度、密度ルール（`phrase-density`）と短い文書の除外（`min_chars`）を profile と preset に入れた。太字ラベルの箇条書きと斜体の割合も decoration-density で見る。
 - `onajimi review` が、人や AI が一度で読める review.md にまとめる。`onajimi pipeline` が split から review までを通し、`onajimi init` がひな形を書く。
 - わかったこと: 様々/さまざま は gemini が筆者と同じく「様々」を選ぶので、「どの runner も」の条件では出ない。斜体の割合は筆者自身の記事でも 0 から 1 まで散らばっていて、文書単位のしきい値では筆者とモデルを分けられない。
+
+## test の汚染（2026-11-01）
+- amane の test 22 本は、初版の辞書を作るときに誤検出を見ている（大切・どこか・ふと）。第 2 版でこの 3 語を外した根拠は、指示への混入と dev での誤検出だが、test で見た記憶が判断に入った可能性は否定できない。3 語を残していれば、test の誤検出は 0.12 ではなく 0.17 前後だったはず。
+- そのため、この 22 本は「一度見た test」として扱う。A/B/C 比較には使うが、結果には注記を付ける（C に少し有利な向き）。
+- 2026-10-28 以降に公開する tech/ugoki の記事は test2 として取っておく。辞書の調整にも dev の確認にも使わない。数本たまったら、test2 で A/B/C を回し直す。
+- test と test2 は、lint の結果も含めて最後の評価まで見ない。
 
 ## 決まったこと
 - 最初の筆者コーパス: ama.ne.jp のブログ記事（Markdown 原稿）

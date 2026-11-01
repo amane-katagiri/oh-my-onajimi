@@ -55,7 +55,17 @@ test("model-leaning allows silence the matched span", async () => {
   assert.deepEqual(await lintFixture("model-leaning-allow", "fires.md"), []);
 });
 
-test("leaning rules stay off unless configured, so the ai-words-ja built-in dictionary never runs", async () => {
+test("model-leaning allows ignore text outside the matched span", async () => {
+  const messages = await lintFixture("model-leaning-allow-outside", "fires.md");
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].column, 8);
+});
+
+test("model-leaning needs a dictionary when enabled", async () => {
+  await assert.rejects(lintFixture("leaning-no-dictionary", "fires.md"), /dictionaryPath/);
+});
+
+test("leaning rules stay off unless configured", async () => {
   assert.deepEqual(await lintFixture("decoration-density-off", "builtin.md"), []);
 });
 

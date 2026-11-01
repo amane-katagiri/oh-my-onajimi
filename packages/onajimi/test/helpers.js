@@ -19,7 +19,8 @@ export const writeFile = (root, name, text) => {
   return file;
 };
 
-export const run = (args) => {
-  const result = spawnSync(process.execPath, [bin, ...args], { encoding: "utf8" });
+export const run = (args, { env, cwd, command = [process.execPath, bin] } = {}) => {
+  const [file, ...head] = command;
+  const result = spawnSync(file, [...head, ...args], { encoding: "utf8", cwd, env: env === undefined ? process.env : { ...process.env, ...env } });
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 };

@@ -16,7 +16,7 @@ test("build writes the four generated files and keeps evidence out of messages",
   const author = JSON.parse(fs.readFileSync(path.join(dir, "author-leaning.json"), "utf8"));
   assert.equal(author.entries[0].message, "筆者は「確かめる」と書く。");
   const rc = JSON.parse(fs.readFileSync(path.join(dir, ".textlintrc.json"), "utf8"));
-  assert.equal(rc.rules["preset-onajimi"]["model-leaning"].dictionaryMode, "override");
+  assert.equal(rc.rules["preset-onajimi"]["model-leaning"].dictionaryPath, "./model-leaning.json");
   assert.equal(rc.rules["preset-onajimi"]["decoration-density"].maxBoldPer1000, 3);
   assert.equal(rc.rules["sentence-length"].max, 60);
   assert.equal(rc.rules["max-ten"].max, 2);

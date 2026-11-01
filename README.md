@@ -7,8 +7,11 @@
 ## 構成
 
 ```
-packages/textlint-rule-preset-onajimi/  textlint のルール集（model-leaning / author-leaning / decoration-density / phrase-density）
-packages/onajimi/                        CLI（build / lint / guard）
+.claude-plugin/plugin.json               Claude Code プラグインのマニフェスト
+.claude-plugin/marketplace.json          ローカルで試すためのマーケットプレイス（このディレクトリ自体をプラグインとして載せる）
+bin/onajimi                              CLI の入口（プラグインが有効なあいだ Bash の PATH に入る）
+packages/textlint-rule-preset-onajimi/  textlint のルール集（model-leaning / author-leaning / decoration-density / phrase-density）。単体でも配れる形
+packages/onajimi/                        CLI（build / lint / guard など）。ルール集は相対パスで読む
 authors/<name>/profile.yml               人が編集する唯一の元データ
 authors/<name>/corpus.yml                コーパスの選び方・除外・対照の生成コマンド・プロファイラの設定
 authors/<name>/split.yml                 プロファイル用・dev 用・テスト用の記事（onajimi split で一度だけ作る）
@@ -19,12 +22,32 @@ skills/onajimi/SKILL.md                   薄いスキル（書いた記事を�
 skills/onajimi-profile/SKILL.md           プロファイルを人と決めるためのスキル
 ```
 
+## Claude Code プラグインとして入れる
+
+```sh
+npm ci                                                  # ローカルのパスから入れるときは依存が自動では入らない
+claude plugin marketplace add ./                        # このリポジトリのルートで
+claude plugin install onajimi@oh-my-onajimi
+```
+
+Git のリポジトリから入れたとき（`/plugin marketplace add <owner>/<repo>` のあと `/plugin install onajimi@oh-my-onajimi`）は、package-lock.json に沿って依存が自動で入る。
+
+筆者のデータは、プラグインのデータディレクトリ `${CLAUDE_PLUGIN_DATA}`（`~/.claude/plugins/data/<プラグインの ID>/`、更新しても残る）の `authors/<name>/` に置く。スキルは CLI に `--root ${CLAUDE_PLUGIN_DATA}` を渡す。このリポジトリにある筆者のプロファイルは、次のように写す。
+
+```sh
+bin/onajimi import --root ~/.claude/plugins/data/onajimi-oh-my-onajimi --from . --author amane
+```
+
+`import` は `--from` の root から profile.yml・corpus.yml・split.yml・profile/（`_full/` を除く）を写し、写した先で build する。corpus/（記事と対照）は写さない。写した先にもうあれば止まる。新しい筆者は `init --root <データディレクトリ>` から作る。
+
+CLI の root（`authors/` のあるディレクトリ）は、`--root`、環境変数 `ONAJIMI_ROOT`、このリポジトリの順に決まる。
+
 ## 新しい筆者のプロファイルを作る
 
 ```sh
-npx onajimi init --author alice --posts ~/blog/content/post   # corpus.yml のひな形と空の profile.yml
+bin/onajimi init --author alice --posts ~/blog/content/post   # corpus.yml のひな形と空の profile.yml
 # corpus.yml の posts・select・control.runners を直す
-npx onajimi pipeline --author alice   # split → control（全 runner、再開できる）→ profile → build → review
+bin/onajimi pipeline --author alice   # split → control（全 runner、再開できる）→ profile → build → review
 ```
 
 `pipeline` は split.yml がなければ作り、全 runner の対照を全記事ぶん作る（`--limit n` は 1 回で新しく作る数、`--delay` は間隔）。どれかの runner が止まったら profile に進まず、3（回数制限）か 4（混雑）で終わるので、同じコマンドで再開する。最後に `authors/<name>/profile/review.md` を書く。これを読んで profile.yml を決め、`build` と `eval --set dev` で確かめる（skills/onajimi-profile）。test は最後に一度だけ使う。
@@ -34,21 +57,21 @@ npx onajimi pipeline --author alice   # split → control（全 runner、再開�
 Node 26 以降。
 
 ```sh
-npm install
+npm ci
 npm test
 
-npx onajimi build --author amane           # profile.yml から generated/ を作る
-npx onajimi build --author amane --check   # generated/ が古ければ 1 で終わる
-npx onajimi lint --author amane draft.md   # 指摘を「行:列 ルール名 メッセージ」で 1 行ずつ出す。0 件なら何も出さない
-npx onajimi guard draft.md out.md          # 数値と否定の数が変わっていれば 1 で終わる
+bin/onajimi build --author amane           # profile.yml から generated/ を作る
+bin/onajimi build --author amane --check   # generated/ が古ければ 1 で終わる
+bin/onajimi lint --author amane draft.md   # 指摘を「行:列 ルール名 メッセージ」で 1 行ずつ出す。0 件なら何も出さない
+bin/onajimi guard draft.md out.md          # 数値と否定の数が変わっていれば 1 で終わる
 
-npx onajimi split --author amane           # 記事を選び、新しい test_ratio をテスト用、その前の dev_ratio を dev 用にして split.yml に書く
-npx onajimi corpus --author amane          # プロファイル用・dev 用・テスト用の本数と字数
-npx onajimi control --author amane --runner opus --dry-run          # 対照のプロンプトを見るだけ
-npx onajimi control --author amane --runner opus [--set profile|dev|test|all] [--only a,b] [--limit n]
-npx onajimi profile --author amane [--paired]   # profile/ に候補・提案・しきい値を書く
-npx onajimi review --author amane          # profile/review.md（提案のまとめと、今の profile.yml での dev の指摘）
-npx onajimi eval --author amane [--set dev]   # 誤検出と対照での検出（1000 字あたり）。既定は test
+bin/onajimi split --author amane           # 記事を選び、新しい test_ratio をテスト用、その前の dev_ratio を dev 用にして split.yml に書く
+bin/onajimi corpus --author amane          # プロファイル用・dev 用・テスト用の本数と字数
+bin/onajimi control --author amane --runner opus --dry-run          # 対照のプロンプトを見るだけ
+bin/onajimi control --author amane --runner opus [--set profile|dev|test|all] [--only a,b] [--limit n]
+bin/onajimi profile --author amane [--paired]   # profile/ に候補・提案・しきい値を書く
+bin/onajimi review --author amane          # profile/review.md（提案のまとめと、今の profile.yml での dev の指摘）
+bin/onajimi eval --author amane [--set dev]   # 誤検出と対照での検出（1000 字あたり）。既定は test
 ```
 
 `control` は出力を `corpus/_control/<runner>/<slug>.md` に、モデル名・プロンプトのハッシュ・所要時間・試行回数を同名の `.json` に置く。出力済みでプロンプトのハッシュが今と同じ記事は飛ばし、ハッシュが違う（または `.json` がない）記事は作り直す。止まっても同じコマンドで続きから再開できる。混雑（gemini の 503、runner の `unavailable` に一致した失敗）は `retry_delays_seconds` の間隔で再試行し、それでも駄目なら止まって 4 で終わる。回数制限（429、`rate_limit` に一致した失敗）はすぐ止まって 3 で終わる。runner は `command`（stdin にプロンプトを渡す。引数に `{prompt}` があればそこに入れる）か、`api: gemini`（`key_file` から API キーを読み、ヘッダーで送る）で書く。
@@ -101,4 +124,4 @@ npx onajimi eval --author amane [--set dev]   # 誤検出と対照での検出�
 
 ## ライセンス
 
-`packages/onajimi/src/guard.js` の一部は yomiyasu（MIT）からの移植。[NOTICE](NOTICE) を参照。
+MIT（[LICENSE](LICENSE)）。`packages/onajimi/src/guard.js` の一部は yomiyasu（MIT）、`packages/textlint-rule-preset-onajimi/rules/token-leaning.js` の一部は textlint-rule-preset-ai-words-ja（MIT）からの移植。[NOTICE](NOTICE) を参照。
