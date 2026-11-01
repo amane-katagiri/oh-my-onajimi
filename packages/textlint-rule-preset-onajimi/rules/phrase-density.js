@@ -4,12 +4,13 @@ const { matchText } = require("./matcher");
 
 const SKIPPED = ["BlockQuote", "Table", "Html", "Header", "CodeBlock", "Yaml"];
 
-const round = (value) => Number(value.toFixed(1));
+// 0.3 × 10000 / 1000 が 2.999… になるのを丸めてから切り捨てる。
+const allowed = (per1000, chars) => Math.floor(Number(((per1000 * chars) / 1000).toFixed(6)));
 
 module.exports = (context, options = {}) => {
-  const { Syntax, RuleError, report } = context;
+  const { Syntax, RuleError, report, getSource } = context;
   const entries = options.entries || [];
-  const counts = entries.map(() => 0);
+  const hits = entries.map(() => []);
   const pending = [];
   let chars = 0;
   let skipDepth = 0;
@@ -20,14 +21,14 @@ module.exports = (context, options = {}) => {
       }
       chars += [...node.value.replace(/\s/g, "")].length;
       pending.push(
-        matchText(entries, node.value).then((results) => {
+        matchText(entries, getSource(node)).then((results) => {
           for (const result of results) {
-            counts[entries.indexOf(result.dict)] += 1;
+            hits[entries.indexOf(result.dict)].push({ node, index: result.index });
           }
         }),
       );
     },
-    async [Syntax.DocumentExit](node) {
+    async [Syntax.DocumentExit]() {
       await Promise.all(pending);
       if (chars === 0) {
         return;
@@ -36,10 +37,14 @@ module.exports = (context, options = {}) => {
         if (chars < (entry.min_chars || 0)) {
           return;
         }
-        const per1000 = (counts[index] / chars) * 1000;
-        if (per1000 > entry.max_per_1000) {
-          const typical = typeof entry.typical_per_1000 === "number" ? `筆者はふつう ${entry.typical_per_1000}、` : "";
-          report(node, new RuleError(`${entry.message} 1000字あたり ${round(per1000)}（${typical}目安 ${entry.max_per_1000} 以下）。`));
+        const count = hits[index].length;
+        const limit = allowed(entry.max_per_1000, chars);
+        if (count <= limit) {
+          return;
+        }
+        const message = `${entry.message}この文書では ${count} 回（目安 ${limit} 回まで）。${count - limit} 回減らす。`;
+        for (const hit of hits[index]) {
+          report(hit.node, new RuleError(message, { index: hit.index }));
         }
       });
     },

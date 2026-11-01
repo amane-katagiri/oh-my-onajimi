@@ -21,7 +21,7 @@ module.exports = (context, options = {}) => {
   const { maxBoldPer1000, maxListRatio, minChars = 0, maxBoldLabelItems, minEmphasisShare, minEmphasisMarks = 3, typicalEmphasisShare } = options;
   let proseChars = 0;
   let listChars = 0;
-  let boldCount = 0;
+  const bolds = [];
   let emphasisCount = 0;
   let listDepth = 0;
   let skipDepth = 0;
@@ -49,9 +49,9 @@ module.exports = (context, options = {}) => {
     [Syntax.BlockQuoteExit]: exitSkip,
     [Syntax.Table]: enterSkip,
     [Syntax.TableExit]: exitSkip,
-    [Syntax.Strong]() {
+    [Syntax.Strong](node) {
       if (skipDepth === 0) {
-        boldCount += 1;
+        bolds.push(node);
       }
     },
     [Syntax.Emphasis]() {
@@ -78,7 +78,7 @@ module.exports = (context, options = {}) => {
           );
         }
       }
-      const marks = boldCount + emphasisCount;
+      const marks = bolds.length + emphasisCount;
       if (typeof minEmphasisShare === "number" && marks >= minEmphasisMarks) {
         const share = round(emphasisCount / marks, 2);
         if (share < minEmphasisShare) {
@@ -93,9 +93,14 @@ module.exports = (context, options = {}) => {
         return;
       }
       if (typeof maxBoldPer1000 === "number" && proseChars >= minChars) {
-        const per1000 = round((boldCount / proseChars) * 1000, 1);
+        const per1000 = round((bolds.length / proseChars) * 1000, 1);
         if (per1000 > maxBoldPer1000) {
-          report(node, new RuleError(`太字が多い: 1000字あたり ${per1000} 個（目安 ${maxBoldPer1000} 以下）。強調を減らす。`));
+          // 0.3 × 10000 / 1000 が 2.999… になるのを丸めてから切り捨てる。
+          const limit = Math.floor(Number(((maxBoldPer1000 * proseChars) / 1000).toFixed(6)));
+          const message = `この文書の太字は ${bolds.length} 個（目安 ${limit} 個まで）。${bolds.length - limit} 個減らす。`;
+          for (const bold of bolds) {
+            report(bold, new RuleError(message));
+          }
         }
       }
       if (typeof maxListRatio === "number") {

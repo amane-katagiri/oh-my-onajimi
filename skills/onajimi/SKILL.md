@@ -7,6 +7,6 @@ allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/onajimi *)
 
 1. 本文はふだんどおり書く。このスキルを理由に書き方を変えない。
 2. 書き終えたら作業ディレクトリに onajimi-draft.md として保存し、`${CLAUDE_PLUGIN_ROOT}/bin/onajimi lint --root ${CLAUDE_PLUGIN_DATA} --author <name> onajimi-draft.md` を実行する。
-3. 指摘された箇所だけを直す。直すかどうかは文脈で決め、直さない指摘には理由を一言添える。指摘のない文は変えない。
+3. 指摘された箇所だけを直す。直すかどうかは文脈で決め、直さない指摘には理由を一言添える。指摘のない文は変えない。「K 回減らす」のように数を減らす指摘は、指摘された箇所のうち文脈で選んだ K 箇所だけを直し、ほかの箇所と指摘のない文はそのままにする。
 4. 直した稿を onajimi-out.md に保存し、`${CLAUDE_PLUGIN_ROOT}/bin/onajimi guard onajimi-draft.md onajimi-out.md` を実行する。失敗したら、該当する箇所を元に戻す。
 5. lint は再実行しない。残った指摘は一覧にして書き手に返す。

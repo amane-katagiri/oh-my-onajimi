@@ -29,11 +29,13 @@ test("author-leaning is clean when the author's word is used", async () => {
   assert.deepEqual(await lintFixture("author-leaning", "clean.md"), []);
 });
 
-test("decoration-density fires once on bold density", async () => {
+test("decoration-density reports each counted bold at its own position when bold density is exceeded", async () => {
   const messages = await lintFixture("decoration-density", "fires-bold.md");
-  assert.equal(messages.length, 1);
-  assert.equal(messages[0].ruleId, "onajimi/decoration-density");
-  assert.match(messages[0].message, /太字が多い: 1000字あたり [\d.]+ 個（目安 5 以下）/);
+  assert.deepEqual(messages.map((m) => [m.line, m.column]), [[3, 6], [3, 17], [3, 29]]);
+  for (const message of messages) {
+    assert.equal(message.ruleId, "onajimi/decoration-density");
+    assert.equal(message.message, "この文書の太字は 3 個（目安 0 個まで）。3 個減らす。");
+  }
 });
 
 test("decoration-density fires once on list ratio", async () => {
@@ -69,14 +71,16 @@ test("leaning rules stay off unless configured", async () => {
   assert.deepEqual(await lintFixture("decoration-density-off", "builtin.md"), []);
 });
 
-test("phrase-density fires once per entry when the rate exceeds the threshold", async () => {
+test("phrase-density reports every occurrence of an exceeded entry with the count to cut", async () => {
   const messages = await lintFixture("phrase-density", "fires.md");
-  assert.equal(messages.length, 1);
-  assert.equal(messages[0].ruleId, "onajimi/phrase-density");
-  assert.match(messages[0].message, /^「思う」が多い。 1000字あたり [\d.]+（筆者はふつう 4、目安 20 以下）。$/u);
+  assert.deepEqual(messages.map((m) => [m.line, m.column]), [[3, 7], [3, 17], [3, 28], [3, 54], [5, 7]]);
+  for (const message of messages) {
+    assert.equal(message.ruleId, "onajimi/phrase-density");
+    assert.equal(message.message, "「思う」が多い。この文書では 5 回（目安 1 回まで）。4 回減らす。");
+  }
 });
 
-test("phrase-density is clean under the threshold, ignores headings and quotes, and skips short documents", async () => {
+test("phrase-density is clean under the threshold, ignores headings and quotes, and skips documents shorter than min_chars", async () => {
   assert.deepEqual(await lintFixture("phrase-density", "clean.md"), []);
   assert.deepEqual(await lintFixture("phrase-density", "short.md"), []);
 });

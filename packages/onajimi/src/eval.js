@@ -43,21 +43,47 @@ export const lintDoc = async (lintText, doc) => {
   return { findings, quoted: messages.length - findings.length };
 };
 
+const SPREAD = /（目安 \d+ (回|個)まで）。\d+ \1減らす。$/u;
+
+const documentLevel = (findings) => {
+  const seen = new Set();
+  return findings.filter(({ rule, message }) => {
+    if (!SPREAD.test(message)) {
+      return true;
+    }
+    const key = `${rule}\n${message}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
+
+const tally = (byRule, findings, field) => {
+  for (const { rule } of findings) {
+    byRule[rule] ??= { findings: 0, documentLevel: 0 };
+    byRule[rule][field] += 1;
+  }
+};
+
 export const scoreDocs = async (lintText, docs, options) => {
   const byRule = {};
   let findings = 0;
+  let documentLevelFindings = 0;
   let quoted = 0;
   let chars = 0;
   for (const doc of docs) {
     const result = await lintDoc(lintText, doc);
+    const collapsed = documentLevel(result.findings);
     quoted += result.quoted;
     findings += result.findings.length;
-    for (const { rule } of result.findings) {
-      byRule[rule] = (byRule[rule] ?? 0) + 1;
-    }
+    documentLevelFindings += collapsed.length;
+    tally(byRule, result.findings, "findings");
+    tally(byRule, collapsed, "documentLevel");
     chars += analyzeProse(doc.text, options).chars;
   }
-  return { docs: docs.length, chars, findings, quoted, per1000: chars === 0 ? null : (findings / chars) * 1000, byRule };
+  return { docs: docs.length, chars, findings, documentLevel: documentLevelFindings, quoted, per1000: chars === 0 ? null : (findings / chars) * 1000, byRule };
 };
 
 export const authorDocsOf = (posts) => posts.map((post) => ({ slug: post.slug, text: stripTitle(post.text, post.meta) }));
@@ -119,14 +145,14 @@ export const renderFinding = (finding, { messageMax, separator = " ｜ " } = {})
   `${finding.slug}:${finding.line} ${finding.rule} ${messageMax ? truncate(finding.message, messageMax) : finding.message}${separator}${around(finding.text, finding.column)}`;
 
 export const renderEval = (rows) => {
-  const header = "| 対象 | 記事数 | 字数 | 指摘 | 1000字あたり | 内訳 | 引用・表で除外 |";
+  const header = "| 対象 | 記事数 | 字数 | 指摘 | 文書単位 | 1000字あたり | 内訳（文書単位） | 引用・表で除外 |";
   const lines = rows.map((row) => {
     const per1000 = row.docs === 0 ? "対照なし" : row.per1000 === null ? "-" : row.per1000.toFixed(2);
     const breakdown = Object.entries(row.byRule)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, count]) => `${name} ${count}`)
+      .sort((a, b) => b[1].findings - a[1].findings)
+      .map(([name, count]) => (count.documentLevel === count.findings ? `${name} ${count.findings}` : `${name} ${count.findings}（${count.documentLevel}）`))
       .join(", ");
-    return `| ${row.label} | ${row.docs} | ${row.chars} | ${row.findings} | ${per1000} | ${breakdown || "-"} | ${row.quoted} |`;
+    return `| ${row.label} | ${row.docs} | ${row.chars} | ${row.findings} | ${row.documentLevel} | ${per1000} | ${breakdown || "-"} | ${row.quoted} |`;
   });
-  return [header, "|---|---|---|---|---|---|---|", ...lines].join("\n");
+  return [header, "|---|---|---|---|---|---|---|---|", ...lines].join("\n");
 };

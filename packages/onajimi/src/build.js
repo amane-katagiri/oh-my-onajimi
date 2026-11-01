@@ -123,7 +123,6 @@ export const parseProfile = (text) => {
       tokens: checkTokens(where, entry.tokens),
       max_per_1000: entry.max_per_1000,
       ...(minChars === undefined ? {} : { min_chars: minChars }),
-      ...(entry.typical_per_1000 === undefined ? {} : { typical_per_1000: entry.typical_per_1000 }),
       message: entry.message,
     };
   });

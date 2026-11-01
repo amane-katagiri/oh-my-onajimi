@@ -99,12 +99,14 @@ test("density entries and the new thresholds reach the generated config, and phr
   });
   const density = rc.rules["preset-onajimi"]["phrase-density"];
   assert.equal(density.severity, "warning");
-  assert.deepEqual(density.entries[0], { tokens: [{ pos: "動詞", basic_form: "思う" }], max_per_1000: 20, min_chars: 40, typical_per_1000: 3, message: "「思う」が多い。" });
+  assert.deepEqual(density.entries[0], { tokens: [{ pos: "動詞", basic_form: "思う" }], max_per_1000: 20, min_chars: 40, message: "「思う」が多い。" });
   assert.equal(density.entries[1].min_chars, 10);
   const draft = path.join(root, "draft.md");
   fs.writeFileSync(draft, "今日は雨だと思う。明日は晴れると思った。週末も晴れると思う。来週の天気は分からないが大丈夫だと思う。\n\n- **速さ**: 速い\n");
   const lines = run(["lint", "--root", root, "--author", "demo", draft]).stdout.trimEnd().split("\n");
-  assert.ok(lines.some((line) => /^1:1 phrase-density 「思う」が多い。 1000字あたり [\d.]+（筆者はふつう 3、目安 20 以下）。$/u.test(line)), lines.join("\n"));
+  const densityLines = lines.filter((line) => / phrase-density /u.test(line));
+  assert.deepEqual(densityLines.map((line) => line.split(" ")[0]), ["1:7", "1:17", "1:28", "1:48"], lines.join("\n"));
+  assert.ok(densityLines.every((line) => line.endsWith("「思う」が多い。この文書では 4 回（目安 1 回まで）。3 回減らす。")), lines.join("\n"));
   assert.ok(lines.some((line) => /^3:1 decoration-density 太字のラベル/u.test(line)), lines.join("\n"));
   assert.throws(() => parseProfile("density:\n  - tokens: [{ basic_form: a }]\n    message: x\n"), /density\[0\]: max_per_1000 が要る/u);
   assert.throws(() => parseProfile("thresholds:\n  emphasis_share_min: 2\n"), /thresholds\.emphasis_share_min: 0 以上 1 以下/u);
