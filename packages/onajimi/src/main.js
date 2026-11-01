@@ -35,7 +35,7 @@ const usage = () => `使い方:
                                              生成するものがあるのに --yes がなければ、見積もりだけを出して 5 で終わる
   onajimi accept --author <name> <番号...>   review.md の番号（M3 O2 R1 D5 'D5=メッセージ' T T.<項目>[=値]）を profile.yml に足して build する
   onajimi eval --author <name> [--set test|dev|profile|holdout] [--details]   --details は dev と profile だけ
-  onajimi abc --author <name> [--runner <name>] [--set test] [--only a,b] [--limit n] [--delay 秒] [--dry-run] [--estimate] [--yes] [--report]
+  onajimi abc --author <name> [--runner <name>] [--set test] [--only a,b] [--example-category <category>] [--limit n] [--delay 秒] [--dry-run] [--estimate] [--yes] [--report]
                                              A（対照）・B（文体の指示と例）・C（A を lint の指摘で 1 回直す）を比べる。
                                              呼び出すものがあるのに --yes がなければ、見積もりだけを出して 5 で終わる。--report は生成せずに指標を出す
 共通: --root <dir>（authors/ のあるディレクトリ。省略時は環境変数 ONAJIMI_ROOT、それもなければ ${dataRoot()}）`;
@@ -59,6 +59,7 @@ const dispatch = async ({ argv, preset }) => {
       runner: { type: "string" },
       set: { type: "string" },
       only: { type: "string" },
+      "example-category": { type: "string" },
       limit: { type: "string" },
       delay: { type: "string" },
       "dry-run": { type: "boolean", default: false },
@@ -245,6 +246,7 @@ const dispatch = async ({ argv, preset }) => {
       runner: values.runner,
       set: values.set ?? "test",
       only: values.only?.split(",").filter(Boolean),
+      exampleCategory: values["example-category"],
       limit: values.limit === undefined ? undefined : Number(values.limit),
       delaySeconds: values.delay === undefined ? undefined : Number(values.delay),
       estimate: values.estimate,

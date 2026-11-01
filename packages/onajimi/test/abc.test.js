@@ -26,6 +26,11 @@ test("pickExamples takes the newest posts", () => {
   assert.deepEqual(pickExamples(posts).map((p) => p.slug), ["p1", "p2", "p0"]);
 });
 
+test("pickExamples can be limited to one category", () => {
+  const posts = [["2021-01-01", "tech"], ["2023-01-01", "ugoki"], ["2022-01-01", "tech"], ["2020-01-01", "tech"], ["2024-01-01", "ugoki"]].map(([date, category], i) => ({ slug: `p${i}`, meta: { date, category } }));
+  assert.deepEqual(pickExamples(posts, "tech").map((p) => p.slug), ["p2", "p0", "p3"]);
+});
+
 test("prompts carry the base prompt, the examples, the findings and the draft", () => {
   const b = stylePrompt("書いてください。", [{ title: "例題", text: "例の本文。" }]);
   assert.match(b, /^書いてください。\n\nこの筆者の文体で書いてください。/u);

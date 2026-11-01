@@ -23,7 +23,8 @@ export const abcDir = (root, author) => path.join(authorDir(root, author), "expe
 
 const byNewest = (a, b) => (b.meta.date ?? "").localeCompare(a.meta.date ?? "") || a.slug.localeCompare(b.slug);
 
-export const pickExamples = (posts) => [...posts].sort(byNewest).slice(0, EXAMPLE_COUNT);
+export const pickExamples = (posts, category) =>
+  [...posts].filter((post) => category === undefined || post.meta.category === category).sort(byNewest).slice(0, EXAMPLE_COUNT);
 
 export const excerpt = (paragraphs, maxChars = EXAMPLE_MAX_CHARS) => {
   const kept = [];
@@ -90,14 +91,18 @@ const runnerOf = (corpus, name) => {
 const statusOf = (target, metaFile, prompt) =>
   !fs.existsSync(target) ? "new" : readMeta(metaFile)?.prompt_sha256 === sha256(prompt) ? "cached" : "stale";
 
-export const planAbc = async ({ root, author, corpus, runner: name, set = "test", only, lintText }) => {
+export const planAbc = async ({ root, author, corpus, runner: name, set = "test", only, exampleCategory, lintText }) => {
   const { name: runner } = runnerOf(corpus, name);
   const posts = pickPosts(corpus, set, only);
   const missing = posts.filter((post) => !fs.existsSync(controlFile(root, author, runner, post.slug))).map((post) => post.slug);
   if (missing.length > 0) {
     throw new Error(`A（${runner} の対照）がない: ${missing.join(", ")}。先に onajimi control --runner ${runner} --set ${set} を実行する。`);
   }
-  const examples = pickExamples(corpus.profile).map((post) => ({
+  const picked = pickExamples(corpus.profile, exampleCategory);
+  if (picked.length === 0) {
+    throw new Error(`例にできるプロファイル用の記事がない（category: ${exampleCategory}）。`);
+  }
+  const examples = picked.map((post) => ({
     slug: post.slug,
     title: post.meta.title ?? post.slug,
     text: excerpt(proseParagraphs(post.text, options(corpus))),
@@ -493,7 +498,7 @@ export const renderAbcReport = (report) => {
   return `${out.filter((line, i, all) => !(line === "" && all[i - 1] === "")).join("\n")}\n`;
 };
 
-export const abcCommand = async ({ root, author, preset, runner, set = "test", only, limit, delaySeconds, estimate = false, yes = false, dryRun = false, report = false, say = () => {}, log = () => {} }) => {
+export const abcCommand = async ({ root, author, preset, runner, set = "test", only, exampleCategory, limit, delaySeconds, estimate = false, yes = false, dryRun = false, report = false, say = () => {}, log = () => {} }) => {
   const corpus = loadCorpus(root, author);
   if (report) {
     const result = await computeAbcReport({ root, author, preset, corpus, runner, set });
@@ -506,7 +511,7 @@ export const abcCommand = async ({ root, author, preset, runner, set = "test", o
     return 0;
   }
   const { lintText } = await createAuthorLinter(root, author, preset);
-  const plan = await planAbc({ root, author, corpus, runner, set, only, lintText });
+  const plan = await planAbc({ root, author, corpus, runner, set, only, exampleCategory, lintText });
   const delay = delaySeconds ?? corpus.config.control.delaySeconds;
   if (dryRun) {
     for (const item of plan.items.filter((entry) => entry.prompt !== null)) {

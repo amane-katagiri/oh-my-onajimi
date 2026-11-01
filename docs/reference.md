@@ -85,7 +85,7 @@ bin/onajimi eval --author alice                       # 最後に 1 回だけ、
 | `pipeline --author <name> [...]` | split → control（全 runner）→ profile → build → review を通す |
 | `accept --author <name> <番号...>` | review.md の番号の候補を profile.yml に足し、build する |
 | `eval --author <name> [--set ...] [--details]` | 筆者の記事での誤検出と、比較用の記事での検出を 1000 字あたりで出す |
-| `abc --author <name> [--runner <name>] [--set test] [--only a,b] [--limit n] [--estimate] [--yes] [--report]` | A（比較用の記事）・B（文体の指示と筆者の例）・C（A に lint の指摘を 1 回だけ直させる）を作り、比べる |
+| `abc --author <name> [--runner <name>] [--set test] [--only a,b] [--example-category <category>] [--limit n] [--estimate] [--yes] [--report]` | A（比較用の記事）・B（文体の指示と筆者の例）・C（A に lint の指摘を 1 回だけ直させる）を作り、比べる |
 
 ### 終了コード
 
