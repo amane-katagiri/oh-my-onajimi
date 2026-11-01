@@ -76,7 +76,7 @@ bin/onajimi eval --author amane [--set dev]   # 誤検出と対照での検出�
 
 `control` は出力を `corpus/_control/<runner>/<slug>.md` に、モデル名・プロンプトのハッシュ・所要時間・試行回数を同名の `.json` に置く。出力済みでプロンプトのハッシュが今と同じ記事は飛ばし、ハッシュが違う（または `.json` がない）記事は作り直す。止まっても同じコマンドで続きから再開できる。混雑（gemini の 503、runner の `unavailable` に一致した失敗）は `retry_delays_seconds` の間隔で再試行し、それでも駄目なら止まって 4 で終わる。回数制限（429、`rate_limit` に一致した失敗）はすぐ止まって 3 で終わる。runner は `command`（stdin にプロンプトを渡す。引数に `{prompt}` があればそこに入れる）か、`api: gemini`（`key_file` から API キーを読み、ヘッダーで送る）で書く。
 
-`profile` は Monroe ほか (2008) の情報事前分布つき対数オッズ比で、筆者のプロファイル用記事と各 runner の対照を比べる。z が負ほどモデル寄り。対照の先頭にあるタイトルと同じ見出しと、その直後の太字だけの副題（またはサブタイトルと同じ見出し）は、profile と eval の前に外す。ASCII だけのトークン（`x`・`U`・`Web` など）はユニグラムに入れず、両側が ASCII だけのバイグラムも作らない。`candidates.tsv` には、どれかの runner で |z| ≥ 2 の行だけを書く。全行は `profile/_full/candidates.tsv`（gitignore）に書く。`proposal.yml` は profile.yml に写す前の下書きで、自動では profile.yml を書き換えない。
+`profile` は Monroe ほか (2008) の情報事前分布つき対数オッズ比で、筆者のプロファイル用記事と各 runner の対照を比べる。z が負ほどモデル寄り。対照の先頭にあるタイトルと同じ見出しと、その直後の太字だけの副題（またはサブタイトルと同じ見出し）は、profile と eval の前に外す。ASCII だけのトークン（`x`・`U`・`Web` など）はユニグラムに入れず、両側が ASCII だけのバイグラムも作らない。`candidates.tsv` には、どれかの runner で |z| ≥ 2 の行だけを書く。全行は `profile/_full/candidates.tsv` に書く。`profile/` と `generated/` は作り直せる出力なので git では追跡しない（追跡するのは人が書く profile.yml・corpus.yml・split.yml だけ）。`proposal.yml` は profile.yml に写す前の下書きで、自動では profile.yml を書き換えない。
 
 `profile` はほかに次を出す。
 - 表記の組（`orthography`）: kuromoji の基本形の読みと品詞が同じで、表記（かな・漢字・送り仮名）だけが違う語の組。筆者が一方をほぼ必ず選び、どの runner も他方を多く選ぶ組を、prh のエントリ（`expected` が筆者の表記）として出す。活用する語は語幹と先読みの正規表現にする。漢字が食い違う組（機械/機会）は出さない。1 字の漢字の語や、品詞の細分類が違う組は、別の語のことがあるので `orthography_review` に分ける。
