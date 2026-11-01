@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { matchText } = require("./matcher");
+const { createTester } = require("./regexp");
 
 const isEntry = (value) =>
   typeof value === "object" &&
@@ -26,24 +27,12 @@ const loadDictionary = (file) => {
   return entries;
 };
 
-const REGEXP_LITERAL = /^\/(.+)\/([gimsuy]*)$/;
-
-const createTester = (pattern) => {
-  const literal = REGEXP_LITERAL.exec(pattern);
-  if (literal) {
-    // g を残すと lastIndex が持ち越され、同じ文字列でも結果が交互に変わる。
-    const regExp = new RegExp(literal[1], literal[2].replace("g", ""));
-    return (text) => regExp.test(text);
-  }
-  return (text) => text.includes(pattern);
-};
-
 module.exports = (context, options = {}) => {
   const { Syntax, RuleError, report, getSource } = context;
   if (typeof options.dictionaryPath !== "string") {
     throw new Error("dictionaryPath に辞書の JSON を指定する。");
   }
-  const testers = (options.allows || []).map(createTester);
+  const testers = (options.allows || []).map((pattern) => createTester(pattern));
   const entries = loadDictionary(path.resolve(context.getConfigBaseDir() || process.cwd(), options.dictionaryPath));
   return {
     async [Syntax.Str](node) {

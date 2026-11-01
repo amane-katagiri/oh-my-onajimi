@@ -6,9 +6,7 @@
 
 ## インストール
 
-```sh
-npm install --global onajimi
-```
+まだ npm には公開していません。今は oh-my-onajimi のリポジトリから使います。リポジトリのルートで `npm ci` を実行すると、`bin/onajimi` が動きます。この README の `onajimi` は、`bin/onajimi` に読み替えてください。
 
 Node 22 以降が必要です。
 
@@ -40,6 +38,7 @@ onajimi guard draft.md out.md                             # 直す前と後で�
 | `profile` / `review` / `accept` | 候補としきい値を出す / review.md にまとめる / 番号で profile.yml に足す |
 | `pipeline` | split から review までを通す |
 | `eval` | 筆者の記事での誤検出と、対照での検出を 1000 字あたりで出す |
+| `abc` | 対照（A）、文体の指示と例を足した出力（B）、A と B を lint の指摘で 1 回直した稿（C・BC）を比べる（費用がかかるので `--yes` がなければ見積もりだけ出す。`--report` は生成せずに指標を出す） |
 
 引数なしで実行すると、全てのオプションが出ます。プロファイルの作り方（対照の生成、候補の選び方、dev と test の使い分け）は、リポジトリ oh-my-onajimi の README と docs/reference.md にあります。
 

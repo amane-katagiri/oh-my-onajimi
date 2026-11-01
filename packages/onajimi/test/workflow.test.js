@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import YAML from "yaml";
 import { parseCorpusConfig } from "../src/corpus.js";
 import { parseProfile } from "../src/build.js";
-import { renderReview, truncate } from "../src/review.js";
-import { run } from "./helpers.js";
+import { renderReview } from "../src/review.js";
+import { truncate } from "../src/eval.js";
+import { emptyRoot, makeRoot, run } from "./helpers.js";
 import { makeCorpusRoot, post } from "./corpus-helpers.js";
 import { fileURLToPath } from "node:url";
 
@@ -64,7 +64,7 @@ test("pipeline stops before profile when a runner hits its rate limit, and --lim
 });
 
 test("init writes a starter corpus.yml and an empty profile.yml, and refuses to overwrite", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "onajimi-init-"));
+  const root = emptyRoot();
   const result = run(["init", "--root", root, "--author", "newbie", "--posts", "~/blog/content/post"]);
   assert.equal(result.code, 0, result.stderr);
   const text = fs.readFileSync(path.join(root, "authors/newbie/corpus.yml"), "utf8");
@@ -134,6 +134,19 @@ test("review rows show z, counts, brief and register columns, context and exampl
   assert.match(text, /- D2 「か」」が多い。.*\n  - 注: かぎかっこに掛かる語$/mu);
   assert.match(text, /generated\/ が profile\.yml と食い違っている/u);
   assert.equal(truncate("abc", 2), "ab…");
+});
+
+test("numeric options must be whole numbers and each command accepts only its own options", () => {
+  const root = makeRoot();
+  for (const args of [["--limit", "abc"], ["--limit", "1.5"], ["--delay=-1"], ["--delay", "Infinity"]]) {
+    const result = run(["control", "--root", root, "--author", "demo", "--runner", "fake", ...args]);
+    assert.equal(result.code, 2, args.join(" "));
+    assert.match(result.stderr, /は 0 以上の整数で書く/u);
+  }
+  const dryRun = run(["pipeline", "--root", root, "--author", "demo", "--dry-run", "--yes"]);
+  assert.equal(dryRun.code, 2);
+  assert.match(dryRun.stderr, /^pipeline には --dry-run を使えない/u);
+  assert.match(run(["eval", "--root", root, "--author", "demo", "--limit", "1", "--paired"]).stderr, /^eval には --limit・--paired を使えない/u);
 });
 
 test("pipeline prints an estimate and stops with 5 until --yes is given; --estimate never writes", () => {

@@ -9,12 +9,14 @@
 - 太字や箇条書きの多さ
 - 言い回しの密度
 
-辞書としきい値は筆者ごとに違うので、プリセットには入っていません。ふつうは CLI の onajimi（npm の `onajimi`）が、筆者の記事とモデルの対照から作ります（`onajimi build` が `generated/` に辞書と `.textlintrc.json` を書きます）。手で書いてもかまいません。
+辞書としきい値は筆者ごとに違うので、プリセットには入っていません。ふつうは CLI の onajimi（同じリポジトリの `packages/onajimi`）が、筆者の記事とモデルの対照から作ります（`onajimi build` が `generated/` に辞書と `.textlintrc.json` を書きます）。手で書いてもかまいません。
 
 ## インストール
 
+まだ npm には公開していません。今は oh-my-onajimi のリポジトリから入れます。リポジトリの `packages/textlint-rule-preset-onajimi` で `npm pack` を実行し、できた tgz を入れます。
+
 ```sh
-npm install --save-dev textlint textlint-rule-preset-onajimi
+npm install --save-dev textlint ./textlint-rule-preset-onajimi-0.1.0.tgz
 ```
 
 Node 20 以降、textlint 15 以降が必要です。

@@ -12,6 +12,12 @@
   "author": "Amane Katagiri",
   "type": "commonjs",
   "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./rules/count.js": "./rules/count.js",
+    "./rules/regexp.js": "./rules/regexp.js",
+    "./rules/preset-rules.js": "./rules/preset-rules.js"
+  },
   "files": [
     "index.js",
     "rules/",

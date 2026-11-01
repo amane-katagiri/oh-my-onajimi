@@ -1,12 +1,11 @@
-import { tokenize } from "kuromojin";
-import { analyzeProse } from "./prose.js";
-import { base, isAscii, isBreak } from "./tokens.js";
+import { createTester } from "./preset.js";
+import { base, isAscii, isBreak, tokenizeProse } from "./tokens.js";
 
-export const tokenCounts = async (markdown, options) => {
+export const countsOf = (strTokens) => {
   const counts = new Map();
   let total = 0;
-  for (const text of analyzeProse(markdown, options).strs) {
-    for (const token of await tokenize(text)) {
+  for (const { tokens } of strTokens) {
+    for (const token of tokens) {
       if (isBreak(token) || isAscii(token)) {
         continue;
       }
@@ -17,6 +16,8 @@ export const tokenCounts = async (markdown, options) => {
   }
   return { counts, total };
 };
+
+export const tokenCounts = async (markdown, options) => countsOf((await tokenizeProse(markdown, options)).strTokens);
 
 export const mostFrequent = (docs, n, exclude = () => false) => {
   const totals = new Map();
@@ -53,19 +54,8 @@ export const centroid = (vectors) => vectors[0].map((_, i) => vectors.reduce((su
 
 export const delta = (a, b) => a.reduce((sum, value, i) => sum + Math.abs(value - b[i]), 0) / a.length;
 
-const REGEXP_LITERAL = /^\/(.+)\/([gimsuy]*)$/su;
-
-const matcherOf = (pattern) => {
-  const literal = REGEXP_LITERAL.exec(pattern);
-  if (literal) {
-    const regExp = new RegExp(literal[1], literal[2].replace("g", ""));
-    return (key) => regExp.test(key);
-  }
-  return (key) => key.includes(pattern);
-};
-
 export const dictionaryTokens = (profile) => {
-  const matchers = profile.orthography.flatMap((entry) => [entry.expected, ...(entry.patterns ?? [entry.pattern])].map(matcherOf));
+  const matchers = profile.orthography.flatMap((entry) => [entry.expected, ...(entry.patterns ?? [entry.pattern])].map((pattern) => createTester(pattern)));
   const exact = new Set(
     [...profile.density, ...profile.modelLeaning, ...profile.authorLeaning].flatMap(({ tokens }) =>
       tokens.flatMap((token) => [token.basic_form, token.surface_form].filter((value) => typeof value === "string")),

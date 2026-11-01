@@ -22,3 +22,5 @@ export const authorDir = (root, author) => {
 };
 
 export const generatedDir = (root, author) => path.join(authorDir(root, author), "generated");
+
+export const expandHome = (file) => (file === "~" || file.startsWith("~/") ? path.join(os.homedir(), file.slice(1)) : file);

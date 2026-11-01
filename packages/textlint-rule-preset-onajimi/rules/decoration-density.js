@@ -1,16 +1,8 @@
 "use strict";
 
-const round = (value, digits) => Number(value.toFixed(digits));
+const { DECORATION_SKIPPED, allowedCount, boldPer1000, emphasisShare, isBoldLabelItem, listRatio, proseLength, skipRegions } = require("./count");
 
 const BOLD_LEAD = "この文書の太字は ";
-
-const textOf = (node) => (node.type === "Str" || node.type === "Code" ? node.value : (node.children || []).map(textOf).join(""));
-
-const isBoldLabelItem = (item) => {
-  const paragraph = item.children && item.children[0];
-  const [first, ...rest] = paragraph && paragraph.type === "Paragraph" ? paragraph.children : [];
-  return first !== undefined && first.type === "Strong" && rest.map(textOf).join("").trim() !== "";
-};
 
 const rule = (context, options = {}) => {
   const { Syntax, RuleError, report } = context;
@@ -20,16 +12,8 @@ const rule = (context, options = {}) => {
   const bolds = [];
   let emphasisCount = 0;
   let listDepth = 0;
-  let skipDepth = 0;
   const boldLabels = [];
-  const enterSkip = () => {
-    skipDepth += 1;
-  };
-  const exitSkip = () => {
-    skipDepth -= 1;
-  };
-
-  return {
+  const handlers = {
     [Syntax.List]() {
       listDepth += 1;
     },
@@ -37,29 +21,25 @@ const rule = (context, options = {}) => {
       listDepth -= 1;
     },
     [Syntax.ListItem](node) {
-      if (skipDepth === 0 && isBoldLabelItem(node)) {
+      if (!skipped() && isBoldLabelItem(node)) {
         boldLabels.push(node);
       }
     },
-    [Syntax.BlockQuote]: enterSkip,
-    [Syntax.BlockQuoteExit]: exitSkip,
-    [Syntax.Table]: enterSkip,
-    [Syntax.TableExit]: exitSkip,
     [Syntax.Strong](node) {
-      if (skipDepth === 0) {
+      if (!skipped()) {
         bolds.push(node);
       }
     },
     [Syntax.Emphasis]() {
-      if (skipDepth === 0) {
+      if (!skipped()) {
         emphasisCount += 1;
       }
     },
     [Syntax.Str](node) {
-      if (skipDepth > 0) {
+      if (skipped()) {
         return;
       }
-      const length = [...node.value.replace(/\s/g, "")].length;
+      const length = proseLength(node.value);
       proseChars += length;
       if (listDepth > 0) {
         listChars += length;
@@ -76,8 +56,8 @@ const rule = (context, options = {}) => {
       }
       const marks = bolds.length + emphasisCount;
       if (typeof minEmphasisShare === "number" && marks >= minEmphasisMarks) {
-        const share = round(emphasisCount / marks, 2);
-        if (share < minEmphasisShare) {
+        const share = emphasisShare(emphasisCount, marks);
+        if (share !== null && share < minEmphasisShare) {
           const typical = typeof typicalEmphasisShare === "number" ? `筆者はふつう ${typicalEmphasisShare}、` : "";
           report(
             node,
@@ -88,25 +68,23 @@ const rule = (context, options = {}) => {
       if (proseChars === 0) {
         return;
       }
-      if (typeof maxBoldPer1000 === "number" && proseChars >= minChars) {
-        const per1000 = round((bolds.length / proseChars) * 1000, 1);
-        if (per1000 > maxBoldPer1000) {
-          // 0.3 × 10000 / 1000 が 2.999… になるのを丸めてから切り捨てる。
-          const limit = Math.floor(Number(((maxBoldPer1000 * proseChars) / 1000).toFixed(6)));
-          const message = `${BOLD_LEAD}${bolds.length} 個（目安 ${limit} 個まで）。${bolds.length - limit} 個減らす。`;
-          for (const bold of bolds) {
-            report(bold, new RuleError(message));
-          }
+      if (typeof maxBoldPer1000 === "number" && proseChars >= minChars && boldPer1000(bolds.length, proseChars) > maxBoldPer1000) {
+        const limit = allowedCount(maxBoldPer1000, proseChars);
+        const message = `${BOLD_LEAD}${bolds.length} 個（目安 ${limit} 個まで）。${bolds.length - limit} 個減らす。`;
+        for (const bold of bolds) {
+          report(bold, new RuleError(message));
         }
       }
       if (typeof maxListRatio === "number") {
-        const ratio = round(listChars / proseChars, 2);
+        const ratio = listRatio(listChars, proseChars);
         if (ratio > maxListRatio) {
           report(node, new RuleError(`箇条書きが多い: 地の文の ${ratio} が箇条書き（目安 ${maxListRatio} 以下）。文章で書ける項目は段落にする。`));
         }
       }
     },
   };
+  const skipped = skipRegions(DECORATION_SKIPPED, handlers);
+  return handlers;
 };
 
 module.exports = rule;

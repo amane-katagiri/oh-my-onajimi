@@ -1,11 +1,7 @@
 "use strict";
 
 const { matchText } = require("./matcher");
-
-const SKIPPED = ["BlockQuote", "Table", "Html", "Header", "CodeBlock", "Yaml"];
-
-// 0.3 × 10000 / 1000 が 2.999… になるのを丸めてから切り捨てる。
-const allowed = (per1000, chars) => Math.floor(Number(((per1000 * chars) / 1000).toFixed(6)));
+const { PHRASE_SKIPPED, allowedCount, proseLength, skipRegions } = require("./count");
 
 module.exports = (context, options = {}) => {
   const { Syntax, RuleError, report, getSource } = context;
@@ -13,13 +9,12 @@ module.exports = (context, options = {}) => {
   const hits = entries.map(() => []);
   const pending = [];
   let chars = 0;
-  let skipDepth = 0;
   const handlers = {
     [Syntax.Str](node) {
-      if (skipDepth > 0 || entries.length === 0) {
+      if (skipped() || entries.length === 0) {
         return;
       }
-      chars += [...node.value.replace(/\s/g, "")].length;
+      chars += proseLength(node.value);
       pending.push(
         matchText(entries, getSource(node)).then((results) => {
           for (const result of results) {
@@ -38,7 +33,7 @@ module.exports = (context, options = {}) => {
           return;
         }
         const count = hits[index].length;
-        const limit = allowed(entry.max_per_1000, chars);
+        const limit = allowedCount(entry.max_per_1000, chars);
         if (count <= limit) {
           return;
         }
@@ -49,13 +44,6 @@ module.exports = (context, options = {}) => {
       });
     },
   };
-  for (const type of SKIPPED) {
-    handlers[type] = () => {
-      skipDepth += 1;
-    };
-    handlers[`${type}:exit`] = () => {
-      skipDepth -= 1;
-    };
-  }
+  const skipped = skipRegions(PHRASE_SKIPPED, handlers);
   return handlers;
 };

@@ -1,10 +1,9 @@
 import fs from "node:fs";
-import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import YAML from "yaml";
-import { authorDir } from "./paths.js";
 import { THRESHOLD_KEYS, build, parseProfile } from "./build.js";
 import { corpusPaths } from "./corpus.js";
+import { readProfileOutput } from "./docs.js";
 
 const SECTIONS = { M: "model_leaning", O: "orthography", R: "orthography_review", D: "density" };
 const TARGETS = { model_leaning: "model_leaning", orthography: "orthography", orthography_review: "orthography", density: "density" };
@@ -87,12 +86,8 @@ export const acceptIds = ({ root, author, ids }) => {
   if (ids.length === 0) {
     throw new Error("受け入れる番号を 1 つ以上渡す（review.md の M3・O2・D5・T など）");
   }
-  const proposalFile = path.join(corpusPaths(root, author).profile, "proposal.yml");
-  if (!fs.existsSync(proposalFile)) {
-    throw new Error(`${path.relative(process.cwd(), proposalFile)} がない。先に onajimi profile --author ${author} を実行する。`);
-  }
-  const proposal = YAML.parse(fs.readFileSync(proposalFile, "utf8")) ?? {};
-  const profileFile = path.join(authorDir(root, author), "profile.yml");
+  const proposal = readProfileOutput(root, author, "proposal.yml") ?? {};
+  const profileFile = corpusPaths(root, author).profileYml;
   const text = fs.readFileSync(profileFile, "utf8");
   const current = YAML.parse(text) ?? {};
   const picked = ids.flatMap((raw) => resolve(proposal, raw));

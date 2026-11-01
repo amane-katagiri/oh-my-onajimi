@@ -1,7 +1,8 @@
 import { tokenize } from "kuromojin";
 import { splitAST, SentenceSplitterSyntax } from "sentence-splitter";
 import { StringSource } from "textlint-util-to-string";
-import { nodeText, parseMarkdown } from "./prose.js";
+import { parseMarkdown } from "./prose.js";
+import { presetCount } from "./preset.js";
 
 const TEN_SEPARATORS = ["?", "!", "？", "！", "。"];
 
@@ -57,13 +58,9 @@ const maxTenInSentence = async (sentence) => {
   return max;
 };
 
-export const isBoldLabelItem = (item) => {
-  const paragraph = item.children?.[0];
-  const [first, ...rest] = paragraph?.type === "Paragraph" ? paragraph.children : [];
-  return first?.type === "Strong" && rest.map(nodeText).join("").trim() !== "";
-};
-
 export const measureArticle = async (markdown) => {
+  const count = presetCount();
+  const skippedTypes = new Set(count.DECORATION_SKIPPED);
   const lengths = [];
   const boldLabels = [];
   let emphasis = 0;
@@ -76,7 +73,7 @@ export const measureArticle = async (markdown) => {
     if (node.type === "Paragraph" && !inQuote) {
       paragraphs.push(node);
     }
-    const skipHere = skip || node.type === "BlockQuote" || node.type === "Table";
+    const skipHere = skip || skippedTypes.has(node.type);
     const listHere = inList || node.type === "List";
     if (node.type === "Strong" && !skipHere) {
       bold += 1;
@@ -84,11 +81,11 @@ export const measureArticle = async (markdown) => {
     if (node.type === "Emphasis" && !skipHere) {
       emphasis += 1;
     }
-    if (node.type === "ListItem" && !skipHere && isBoldLabelItem(node)) {
+    if (node.type === "ListItem" && !skipHere && count.isBoldLabelItem(node)) {
       boldLabels.push({ line: node.loc.start.line, column: node.loc.start.column + 1 });
     }
     if (node.type === "Str" && !skipHere) {
-      const length = [...node.value.replace(/\s/gu, "")].length;
+      const length = count.proseLength(node.value);
       proseChars += length;
       if (listHere) {
         listChars += length;
@@ -111,12 +108,12 @@ export const measureArticle = async (markdown) => {
     proseChars,
     sentence_length: Math.max(0, ...lengths),
     max_ten: Math.max(0, ...tens),
-    bold_per_1000: proseChars === 0 ? 0 : round((bold / proseChars) * 1000, 1),
-    list_ratio: proseChars === 0 ? 0 : round(listChars / proseChars, 2),
+    bold_per_1000: count.boldPer1000(bold, proseChars),
+    list_ratio: count.listRatio(listChars, proseChars),
     bold_label_items: boldLabels.length,
     boldLabels,
     marks: bold + emphasis,
-    emphasis_share: bold + emphasis === 0 ? null : round(emphasis / (bold + emphasis), 2),
+    emphasis_share: count.emphasisShare(emphasis, bold + emphasis),
   };
 };
 
@@ -128,7 +125,7 @@ export const percentile = (values, p) => {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1))];
 };
 
-const ceilTo = (value, unit, floor = unit) => {
+export const ceilTo = (value, unit, floor = unit) => {
   const digits = unit === 1 ? 0 : String(unit).split(".")[1].length;
   return Math.max(floor, round(Math.ceil(round(value / unit, 6)) * unit, digits));
 };
@@ -137,8 +134,6 @@ const floorTo = (value, unit) => {
   const digits = unit === 1 ? 0 : String(unit).split(".")[1].length;
   return Math.max(0, round(Math.floor(round(value / unit, 6)) * unit, digits));
 };
-
-export { ceilTo };
 
 const SPECS = {
   sentence_length: { unit: 1 },

@@ -1,8 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
-import os from "node:os";
-import { authorDir } from "./paths.js";
+import { authorDir, expandHome } from "./paths.js";
 import { FRONTMATTER_LINE } from "./prose.js";
 
 const fail = (where, problem) => {
@@ -11,7 +10,7 @@ const fail = (where, problem) => {
 
 const TOP_LEVEL_KEYS = new Set(["note", "posts", "select", "test_ratio", "dev_ratio", "holdout_after", "exclude_sections", "skip_paragraphs", "control", "profile"]);
 
-export const PROFILE_DEFAULTS = {
+const PROFILE_DEFAULTS = {
   alpha0: 1000,
   min_docs: 2,
   min_count: 3,
@@ -153,7 +152,7 @@ export const parsePost = (slug, text) => {
   return { slug, meta, text };
 };
 
-export const cutSection = (text, heading) => {
+const cutSection = (text, heading) => {
   const lines = text.split("\n");
   const at = lines.findIndex((line) => /^#{1,6}\s/u.test(line) && line.replace(/^#{1,6}\s+/u, "").trim() === heading);
   return at === -1 ? null : lines.slice(0, at).join("\n");
@@ -186,7 +185,7 @@ export const selectPosts = (posts, config) =>
       postDate(post) >= config.select.since,
   );
 
-export const otherRegisterPosts = (posts, config) =>
+const otherRegisterPosts = (posts, config) =>
   config.select.categories === undefined
     ? []
     : posts.filter((post) => byAuthor(post, config.select) && !config.select.categories.includes(post.meta.category));
@@ -204,7 +203,7 @@ export const splitByDate = (posts, testRatio, devRatio = 0) => {
   return { profile: slugs(0, devCut), dev: slugs(devCut, testCut), test: slugs(testCut) };
 };
 
-export const planSplit = (posts, config, existing = null) => {
+const planSplit = (posts, config, existing = null) => {
   if (existing) {
     const assigned = new Set(SETS.flatMap((set) => existing[set] ?? []));
     const added = posts.filter((post) => !assigned.has(post.slug)).sort(byDate).map((post) => post.slug);
@@ -225,10 +224,11 @@ export const corpusPaths = (root, author) => {
     split: path.join(dir, "split.yml"),
     control: path.join(dir, "corpus", "_control"),
     profile: path.join(dir, "profile"),
+    profileYml: path.join(dir, "profile.yml"),
   };
 };
 
-export const loadCorpusConfig = (root, author) => {
+const loadCorpusConfig = (root, author) => {
   const { config } = corpusPaths(root, author);
   if (!fs.existsSync(config)) {
     throw new Error(`${path.relative(process.cwd(), config)} がない`);
@@ -236,11 +236,9 @@ export const loadCorpusConfig = (root, author) => {
   return parseCorpusConfig(fs.readFileSync(config, "utf8"));
 };
 
-const expandHome = (file) => (file === "~" || file.startsWith("~/") ? path.join(os.homedir(), file.slice(1)) : file);
+const postsDir = (root, author, config) => path.resolve(authorDir(root, author), expandHome(config.posts));
 
-export const postsDir = (root, author, config) => path.resolve(authorDir(root, author), expandHome(config.posts));
-
-export const loadPosts = (root, author, config = loadCorpusConfig(root, author)) => {
+const loadPosts = (root, author, config = loadCorpusConfig(root, author)) => {
   const dir = postsDir(root, author, config);
   if (!fs.existsSync(dir)) {
     throw new Error(`${path.relative(process.cwd(), dir)} がない。筆者の記事を先に取得する。`);
@@ -276,6 +274,8 @@ export const saveSplit = ({ root, author }, planned) => {
   return planned;
 };
 
+export const splitText = (split) => SETS.map((set) => `${set} ${split[set].length} 本`).join("、");
+
 export const writeSplit = ({ root, author }) => saveSplit({ root, author }, computeSplit({ root, author }));
 
 export const loadCorpus = (root, author, { split: given } = {}) => {
@@ -301,4 +301,22 @@ export const loadCorpus = (root, author, { split: given } = {}) => {
     .filter((post) => !selected.has(post.slug))
     .map((post) => applyExclusions(post, config.excludeSections));
   return { config, ...Object.fromEntries(SETS.map((set) => [set, pick(listOf(set))])), other };
+};
+
+export const pickPosts = (corpus, set, only) => {
+  if (set !== "all" && !SETS.includes(set)) {
+    throw new Error(`--set は ${SETS.join("・")}・all のどれか`);
+  }
+  const pool = set === "all" ? SETS.flatMap((name) => corpus[name]) : corpus[set];
+  if (!only) {
+    return pool;
+  }
+  const bySlug = new Map(pool.map((post) => [post.slug, post]));
+  return only.map((slug) => {
+    const post = bySlug.get(slug);
+    if (!post) {
+      throw new Error(`${slug} は ${set} にない`);
+    }
+    return post;
+  });
 };

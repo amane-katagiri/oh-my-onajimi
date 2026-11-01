@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
-import { authorDir, generatedDir } from "./paths.js";
+import { corpusPaths } from "./corpus.js";
+import { generatedDir } from "./paths.js";
 
 const TOP_LEVEL_KEYS = new Set(["note", "model_leaning", "author_leaning", "orthography", "density", "thresholds", "allow"]);
 const POSITIVE = (value) => value > 0;
@@ -184,7 +185,7 @@ const textlintrc = ({ thresholds, allow, density }) => {
   return { rules };
 };
 
-export const renderGenerated = (profile) => ({
+const renderGenerated = (profile) => ({
   "model-leaning.json": json({ entries: profile.modelLeaning }),
   "author-leaning.json": json({ entries: profile.authorLeaning }),
   "orthography.yml": YAML.stringify({ version: 1, rules: profile.orthography }),
@@ -192,7 +193,7 @@ export const renderGenerated = (profile) => ({
 });
 
 export const build = ({ root, author, check = false }) => {
-  const profilePath = path.join(authorDir(root, author), "profile.yml");
+  const profilePath = corpusPaths(root, author).profileYml;
   const files = renderGenerated(parseProfile(fs.readFileSync(profilePath, "utf8")));
   const outDir = generatedDir(root, author);
   if (check) {

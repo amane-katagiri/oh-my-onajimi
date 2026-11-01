@@ -1,8 +1,7 @@
-import fs from "node:fs";
-import path from "node:path";
-import { HIDDEN_SETS, SETS, corpusPaths, loadCorpus } from "./corpus.js";
-import { createAuthorLinter } from "./lint.js";
-import { analyzeProse, parseMarkdown, stripTitle } from "./prose.js";
+import { HIDDEN_SETS, SETS, loadCorpus } from "./corpus.js";
+import { authorDocsOf, controlDocsOf } from "./docs.js";
+import { byPosition, createAuthorLinter, flatMessage, ruleName } from "./lint.js";
+import { analyzeProse, parseMarkdown } from "./prose.js";
 
 const QUOTED = new Set(["BlockQuote", "Table", "Html", "CodeBlock"]);
 
@@ -23,23 +22,19 @@ const quotedLines = (markdown) => {
   return lines;
 };
 
-const flat = (message) => message.replace(/\s*\n\s*/gu, " ");
-
-const ruleName = (ruleId) => (ruleId === "prh" ? "orthography" : ruleId.replace(/^onajimi\//u, ""));
-
-export const lintDoc = async (lintText, doc) => {
+const lintDoc = async (lintText, doc) => {
   const skip = quotedLines(doc.text);
   const lines = doc.text.split("\n");
   const messages = await lintText(doc.text, `${doc.slug}.md`);
   const findings = messages
     .filter((message) => !skip.has(message.line))
-    .sort((a, b) => a.line - b.line || a.column - b.column)
+    .sort(byPosition)
     .map((message) => ({
       slug: doc.slug,
       line: message.line,
       column: message.column,
       rule: ruleName(message.ruleId),
-      message: flat(message.message),
+      message: flatMessage(message.message),
       text: (lines[message.line - 1] ?? "").trim(),
     }));
   return { findings, quoted: messages.length - findings.length };
@@ -49,7 +44,7 @@ export const documentKeyOf = (rules, preset) => {
   const phrase = rules.find(({ ruleId }) => ruleId === "onajimi/phrase-density");
   // 長い順に試すのは、ある項目のメッセージが別の項目のメッセージで始まるときに長いほうを取るため。
   const entries = (phrase?.options.entries ?? [])
-    .map(({ message }, index) => ({ lead: flat(message), key: `phrase-density#${index}` }))
+    .map(({ message }, index) => ({ lead: flatMessage(message), key: `phrase-density#${index}` }))
     .sort((a, b) => b.lead.length - a.lead.length);
   const boldLead = preset.rules["decoration-density"].BOLD_LEAD;
   return ({ rule, message }) => {
@@ -91,8 +86,10 @@ export const scoreDocs = async (lintText, docs, options, documentKey) => {
   let documentLevelFindings = 0;
   let quoted = 0;
   let chars = 0;
+  const found = [];
   for (const doc of docs) {
     const result = await lintDoc(lintText, doc);
+    found.push(...result.findings);
     const collapsed = documentLevel(result.findings, documentKey);
     quoted += result.quoted;
     findings += result.findings.length;
@@ -101,17 +98,7 @@ export const scoreDocs = async (lintText, docs, options, documentKey) => {
     tally(byRule, collapsed, "documentLevel");
     chars += analyzeProse(doc.text, options).chars;
   }
-  return { docs: docs.length, chars, findings, documentLevel: documentLevelFindings, quoted, per1000: chars === 0 ? null : (findings / chars) * 1000, byRule };
-};
-
-export const authorDocsOf = (posts) => posts.map((post) => ({ slug: post.slug, text: stripTitle(post.text, post.meta) }));
-
-export const controlDocsOf = (root, author, runner, posts) => {
-  const dir = path.join(corpusPaths(root, author).control, runner);
-  return posts
-    .map((post) => ({ post, file: path.join(dir, `${post.slug}.md`) }))
-    .filter(({ file }) => fs.existsSync(file))
-    .map(({ post, file }) => ({ slug: post.slug, text: stripTitle(fs.readFileSync(file, "utf8"), post.meta) }));
+  return { score: { docs: docs.length, chars, findings, documentLevel: documentLevelFindings, quoted, per1000: chars === 0 ? null : (findings / chars) * 1000, byRule }, found };
 };
 
 export const runEval = async ({ root, author, preset, set = "test", details = false }) => {
@@ -125,19 +112,12 @@ export const runEval = async ({ root, author, preset, set = "test", details = fa
   const options = { skipParagraphs: corpus.config.skipParagraphs };
   const { lintText, rules } = await createAuthorLinter(root, author, preset);
   const documentKey = documentKeyOf(rules, preset);
-  const authorDocs = authorDocsOf(corpus[set]);
-  const rows = [{ label: `誤検出: 筆者 ${set}`, ...(await scoreDocs(lintText, authorDocs, options, documentKey)) }];
+  const own = await scoreDocs(lintText, authorDocsOf(corpus[set]), options, documentKey);
+  const rows = [{ label: `誤検出: 筆者 ${set}`, ...own.score }];
   for (const runner of Object.keys(corpus.config.control.runners)) {
-    rows.push({ label: `検出: ${runner} ${set}`, ...(await scoreDocs(lintText, controlDocsOf(root, author, runner, corpus[set]), options, documentKey)) });
+    rows.push({ label: `検出: ${runner} ${set}`, ...(await scoreDocs(lintText, controlDocsOf(root, author, runner, corpus[set]), options, documentKey)).score });
   }
-  if (!details) {
-    return { rows };
-  }
-  const findings = [];
-  for (const doc of authorDocs) {
-    findings.push(...(await lintDoc(lintText, doc)).findings);
-  }
-  return { rows, findings };
+  return details ? { rows, findings: own.found } : { rows };
 };
 
 const LINE_TEXT_MAX = 60;

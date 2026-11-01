@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { dataRoot, resolveRoot } from "../src/paths.js";
-import { isolatedHome, makeRoot, run, writeFile } from "./helpers.js";
+import { emptyRoot, isolatedHome, makeRoot, run, writeFile } from "./helpers.js";
 
 test("--root wins over ONAJIMI_ROOT, which wins over the data root", () => {
   assert.deepEqual(resolveRoot("/a", { ONAJIMI_ROOT: "/b" }, "/h"), { root: "/a", source: "--root" });
@@ -52,7 +52,7 @@ test("root prints the resolved root and where it came from", () => {
 });
 
 test("init writes under ONAJIMI_ROOT when --root is absent", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "onajimi-test-"));
+  const root = emptyRoot();
   const result = run(["init", "--author", "fresh"], { env: { ONAJIMI_ROOT: root } });
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(fs.readdirSync(path.join(root, "authors/fresh")).sort(), ["corpus.yml", "profile.yml"]);
@@ -74,7 +74,7 @@ const sourceRoot = () => {
 
 test("import copies the profile but not the corpus, then builds", () => {
   const from = sourceRoot();
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "onajimi-test-"));
+  const root = emptyRoot();
   const result = run(["import", "--root", root, "--from", from, "--author", "demo"]);
   assert.equal(result.code, 0, result.stderr);
   const dir = path.join(root, "authors/demo");
@@ -88,7 +88,7 @@ test("import copies the profile but not the corpus, then builds", () => {
 
 test("import --force overwrites the profile files but leaves corpus/ alone", () => {
   const from = sourceRoot();
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "onajimi-test-"));
+  const root = emptyRoot();
   assert.equal(run(["import", "--root", root, "--from", from, "--author", "demo"]).code, 0);
   const dir = path.join(root, "authors/demo");
   writeFile(dir, "corpus/mine.md", "自分の記事。\n");
@@ -109,7 +109,7 @@ test("import --force overwrites the profile files but leaves corpus/ alone", () 
 
 test("the repository entry lints from any working directory", () => {
   const from = sourceRoot();
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "onajimi-test-"));
+  const root = emptyRoot();
   run(["import", "--root", root, "--from", from, "--author", "demo"]);
   const file = writeFile(root, "draft.md", "# 見出し\n\n設定が静かに壊れていた。\n");
   const result = run(["lint", "--root", root, "--author", "demo", file], { cwd: os.tmpdir() });

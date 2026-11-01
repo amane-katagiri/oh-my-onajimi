@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
-import { RateLimitError, UnavailableError, generateOne, sha256, unwrapFence } from "../src/control.js";
+import { RateLimitError, UnavailableError, generateOne, sha256, unwrapFence } from "../src/runner.js";
 import { run } from "./helpers.js";
 import { makeCorpusRoot, post } from "./corpus-helpers.js";
 

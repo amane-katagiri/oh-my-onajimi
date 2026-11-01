@@ -3,9 +3,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
-import { aggregate, annotate, compare, containsWord, docFeatures, docRates, featuresOfMarkdown, isContentWord, logOddsZ, proposeDensity, proposeModelLeaning, proposeRateDifferences, snippet } from "../src/profile.js";
+import { aggregate, annotate, compare, containsWord, docFeatures, featuresOfMarkdown, isContentWord, logOddsZ } from "../src/features.js";
+import { proposeDensity, proposeModelLeaning, proposeRateDifferences } from "../src/proposals.js";
+import { docRates, snippet } from "../src/tokens.js";
 import { aggregateVariants, docVariants, isScriptVariant, prhEntry, proposeOrthography } from "../src/orthography.js";
 import { measureArticle, proposeThresholds } from "../src/stats.js";
+import { TextlintKernel } from "@textlint/kernel";
+import markdownPlugin from "@textlint/textlint-plugin-markdown";
+import preset from "../../textlint-rule-preset-onajimi/index.js";
 import { run } from "./helpers.js";
 import { makeCorpusRoot, post } from "./corpus-helpers.js";
 
@@ -178,6 +183,70 @@ test("bold thresholds count only articles with enough prose; bold labels and emp
   assert.deepEqual(measure.boldLabels.map((at) => at.line), [1, 2, 3, 7]);
   assert.equal(measure.marks, 8);
   assert.equal(measure.emphasis_share, 0.13);
+});
+
+test("proposed decoration thresholds are exactly what decoration-density measures", async () => {
+  const markdown = [
+    "# **見出し**",
+    "",
+    "地の文に**太字**と*斜体*と`コード`がある。もう一つ*斜体*を置き、**太字**も足す。",
+    "",
+    "- **頭**: 太字で始まる項目",
+    "- **頭の二つ目**：これも",
+    "- 中の**太字**",
+    "",
+    "> **引用の太字**と*引用の斜体*は数えない。",
+    "> - **引用の項目**: 数えない",
+    "",
+    "| 表 |",
+    "|---|",
+    "| **表の太字** |",
+    "",
+    "最後の段落はふつうの文で、少し長めに書いておく。",
+    "",
+  ].join("\n");
+  const proposed = Object.fromEntries(Object.entries(proposeThresholds([await measureArticle(markdown)], { minMarks: 1 })).map(([key, value]) => [key, value.proposed]));
+  const options = {
+    maxBoldPer1000: proposed.bold_per_1000,
+    maxListRatio: proposed.list_ratio,
+    maxBoldLabelItems: proposed.bold_label_items,
+    minEmphasisShare: proposed.emphasis_share_min,
+    minEmphasisMarks: 1,
+  };
+  const lintWith = async (changed) =>
+    (
+      await new TextlintKernel().lintText(markdown, {
+        ext: ".md",
+        filePath: "fixture.md",
+        plugins: [{ pluginId: "markdown", plugin: markdownPlugin.default ?? markdownPlugin }],
+        rules: [{ ruleId: "decoration-density", rule: preset.rules["decoration-density"], options: { ...options, ...changed } }],
+      })
+    ).messages.map((message) => message.message);
+  assert.deepEqual(await lintWith({}), []);
+  assert.equal(proposed.bold_label_items, 2);
+  assert.match((await lintWith({ maxBoldPer1000: Number((options.maxBoldPer1000 - 0.1).toFixed(1)) })).join(), /この文書の太字は 6 個/u);
+  assert.match((await lintWith({ maxListRatio: Number((options.maxListRatio - 0.01).toFixed(2)) })).join(), /箇条書きが多い/u);
+  assert.match((await lintWith({ maxBoldLabelItems: options.maxBoldLabelItems - 1 })).join(), /頭を太字にした箇条書き（この文書に 2 個/u);
+  assert.match((await lintWith({ minEmphasisShare: Number((options.minEmphasisShare + 0.01).toFixed(2)) })).join(), /斜体の割合 0.25/u);
+});
+
+test("model_leaning names the surface the runners use most in total", () => {
+  const surfaces = (entries) => new Map(entries);
+  const row = {
+    feature: "x/名詞",
+    tokens: [{ basic_form: "x" }],
+    author: { count: 0, docs: 0, surfaces: new Map(), next: new Map(), examples: [] },
+    z: { m: -3, n: -3 },
+    modelLeaning: { m: true, n: true },
+    control: {
+      m: { count: 6, docs: 3, surfaces: surfaces([["甲", 5], ["乙", 1]]), next: new Map(), examples: [] },
+      n: { count: 4, docs: 3, surfaces: surfaces([["乙", 3], ["甲", 1]]), next: new Map(), examples: [] },
+    },
+    inBriefDocs: 0,
+    controlNext: new Map(),
+  };
+  const proposal = proposeModelLeaning([row], ["m", "n"], { proposal_z: -2, proposal_max_author_docs: 1, proposal_limit: 10 });
+  assert.equal(proposal.model_leaning[0].message, "「甲」は筆者の言い方ではない。");
 });
 
 test("orthography groups script variants by reading and part of speech and writes prh entries", async () => {

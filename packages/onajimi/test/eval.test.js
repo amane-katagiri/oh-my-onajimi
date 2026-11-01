@@ -45,7 +45,7 @@ const bold = (line) => ({ ruleId: "onajimi/decoration-density", line, column: 1,
 const score = async (rules, messages) => {
   const lintText = async (_text, file) => messages[file.replace(/\.md$/u, "")];
   const docs = Object.keys(messages).map((slug) => ({ slug, text: "本文。\n".repeat(10) }));
-  return scoreDocs(lintText, docs, {}, documentKeyOf(rules, preset));
+  return (await scoreDocs(lintText, docs, {}, documentKeyOf(rules, preset))).score;
 };
 
 test("eval counts each occurrence and, separately, reduce-by-count findings once per document and entry", async () => {

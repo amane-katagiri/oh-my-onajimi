@@ -1,4 +1,5 @@
 import { parse } from "@textlint/markdown-to-ast";
+import { createTester, presetCount } from "./preset.js";
 
 export const FRONTMATTER_LINE = /^[A-Za-z_][A-Za-z0-9_-]*:(?:\s|$)/;
 
@@ -29,35 +30,19 @@ export const proseText = (markdown) => {
 };
 
 const NOT_ANALYZED = new Set(["BlockQuote", "Table", "Html", "Header", "Code", "CodeBlock", "Yaml"]);
-const REGEXP_LITERAL = /^\/(.+)\/([gimsuy]*)$/su;
 
-export const nodeText = (node) => {
-  if (node.type === "Str" || node.type === "Code") {
-    return node.value;
-  }
-  return (node.children ?? []).map(nodeText).join("");
-};
-
-const paragraphTester = (pattern) => {
-  const literal = REGEXP_LITERAL.exec(pattern);
-  if (literal) {
-    const regExp = new RegExp(literal[1], literal[2].replace("g", ""));
-    return (text) => regExp.test(text);
-  }
-  return (text) => text === pattern;
-};
-
-export const countChars = (text) => [...text.replace(/\s/gu, "")].length;
+const paragraphTester = (pattern) => createTester(pattern, (text) => text === pattern);
 
 export const analyzeProse = (markdown, { skipParagraphs = [] } = {}) => {
+  const count = presetCount();
   const testers = skipParagraphs.map(paragraphTester);
   const strs = [];
   const headings = [];
   const walk = (node, skipped, inQuote) => {
     if (node.type === "Header" && !inQuote) {
-      headings.push({ depth: node.depth, text: nodeText(node).trim() });
+      headings.push({ depth: node.depth, text: count.textOf(node).trim() });
     }
-    const skipHere = skipped || NOT_ANALYZED.has(node.type) || (node.type === "Paragraph" && testers.some((test) => test(nodeText(node).trim())));
+    const skipHere = skipped || NOT_ANALYZED.has(node.type) || (node.type === "Paragraph" && testers.some((test) => test(count.textOf(node).trim())));
     if (node.type === "Str" && !skipHere) {
       strs.push(node.value);
     }
@@ -66,10 +51,11 @@ export const analyzeProse = (markdown, { skipParagraphs = [] } = {}) => {
     }
   };
   walk(parseMarkdown(markdown), false, false);
-  return { strs, headings, chars: strs.reduce((sum, text) => sum + countChars(text), 0) };
+  return { strs, headings, chars: strs.reduce((sum, text) => sum + count.proseLength(text), 0) };
 };
 
 export const proseParagraphs = (markdown, { skipParagraphs = [] } = {}) => {
+  const count = presetCount();
   const testers = skipParagraphs.map(paragraphTester);
   const paragraphs = [];
   const walk = (node) => {
@@ -77,7 +63,7 @@ export const proseParagraphs = (markdown, { skipParagraphs = [] } = {}) => {
       return;
     }
     if (node.type === "Paragraph") {
-      const text = nodeText(node).trim();
+      const text = count.textOf(node).trim();
       if (text !== "" && !testers.some((test) => test(text))) {
         paragraphs.push(text);
       }
@@ -91,7 +77,7 @@ export const proseParagraphs = (markdown, { skipParagraphs = [] } = {}) => {
   return paragraphs;
 };
 
-const HEADING_LINE =/^#{1,6}\s+(.*?)\s*#*\s*$/u;
+const HEADING_LINE = /^#{1,6}\s+(.*?)\s*#*\s*$/u;
 const BOLD_ONLY_LINE = /^(\*\*|__)(?:(?!\1).)+\1$/u;
 
 const normalizeTitle = (text) => text.normalize("NFKC").replace(/[\s*_`#]/gu, "").toLowerCase();

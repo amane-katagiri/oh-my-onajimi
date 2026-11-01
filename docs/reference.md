@@ -67,7 +67,7 @@ bin/onajimi eval --author alice                       # 最後に 1 回だけ、
 
 ## コマンド
 
-全てのコマンドに `--root <dir>` を付けられます。引数なしで `bin/onajimi` を実行すると、使い方が出ます。
+全てのコマンドに `--root <dir>` を付けられます。そのコマンドが受け付けないオプションを付けると、2 で終わります。引数なしで `bin/onajimi` を実行すると、使い方が出ます。
 
 | コマンド | 何をするか |
 |---|---|
@@ -85,7 +85,7 @@ bin/onajimi eval --author alice                       # 最後に 1 回だけ、
 | `pipeline --author <name> [...]` | split → control（全 runner）→ profile → build → review を通す |
 | `accept --author <name> <番号...>` | review.md の番号の候補を profile.yml に足し、build する |
 | `eval --author <name> [--set ...] [--details]` | 筆者の記事での誤検出と、比較用の記事での検出を 1000 字あたりで出す |
-| `abc --author <name> [--runner <name>] [--set test] [--only a,b] [--example-category <category>] [--limit n] [--estimate] [--yes] [--report]` | A（比較用の記事）・B（文体の指示と筆者の例）・C（A に lint の指摘を 1 回だけ直させる）・BC（B に同じことをする）を作り、比べる |
+| `abc --author <name> [--runner <name>] [--set test] [--only a,b] [--example-category <category>] [--limit n] [--delay 秒] [--dry-run] [--estimate] [--yes] [--report]` | A（比較用の記事）・B（文体の指示と筆者の例）・C（A に lint の指摘を 1 回だけ直させる）・BC（B に同じことをする）を作り、比べる |
 
 ### 終了コード
 
@@ -110,7 +110,7 @@ bin/onajimi eval --author alice                       # 最後に 1 回だけ、
 - 生成するものが 1 本でもあるのに `--yes` がなければ、見積もりを出して何も生成せずに 5 で終わります。`--estimate` と `--dry-run`（プロンプトを見るだけ）は `--yes` なしで動きます。
 - 見積もりの時間と出力トークン数は、その runner の過去の出力の平均から出します。過去の出力がなければ、時間は不明、トークンは 1 字 2.5 トークンとして数えます。費用は runner に `price` を書いたときだけ出し、入力の費用は含めません。
 - 混雑（Gemini の 503 や、runner の `unavailable` に一致した失敗）は `retry_delays_seconds` の間隔で再試行し、それでも駄目なら 4 で終わります。回数制限（429 や `rate_limit` に一致した失敗）はすぐ 3 で終わります。
-- `--limit n` は 1 回で新しく作る本数、`--delay` は記事どうしの間隔（秒）です。
+- `--limit n` は 1 回で新しく作る本数、`--delay` は記事どうしの間隔（秒）です。どちらも 0 以上の整数で書きます。
 - `pipeline` は、どれかの runner が止まると profile に進みません。
 
 ### split
@@ -197,7 +197,21 @@ runner は次のどちらかで書きます。
 - `command`：コマンドを実行し、標準入力にプロンプトを渡します。引数に `{prompt}` があれば、そこに入れます。
 - `api: gemini`：Gemini の API を呼びます。`model` と `key_file`（API キーを書いたファイル）を指定します。キーはヘッダーで送り、ログには出しません。
 
-どちらにも、任意で `price`（出力 100 万トークンあたりの USD。見積もりに使う）、`retry_delays_seconds`、`rate_limit`・`unavailable`（失敗のメッセージに一致させる正規表現）を書けます。
+どちらにも、任意で `price`（出力 100 万トークンあたりの USD。見積もりに使う）を書けます。
+
+`command` の runner には、任意で次も書けます。
+
+- `output`：`text`（既定）か `json`。`json` なら標準出力を JSON として読み、`result_field`（既定は `result`）を本文にします。`is_error` が true の応答は失敗です。
+- `meta_fields`：`output: json` のとき、応答から出力の `.json` に写すフィールドの名前の並び（`total_cost_usd` など）。
+- `rate_limit`・`unavailable`：失敗したときの標準出力と標準エラーに一致させる正規表現（大文字と小文字を区別しない）。一致すれば、それぞれ回数制限と混雑として扱います。
+
+`api: gemini` の runner は、HTTP 429 を回数制限、503 を混雑として扱います。
+
+`control` の直下には、全ての runner に共通する次の設定を書けます。
+
+- `delay_seconds`：記事どうしの間隔の秒数。既定は 0。`--delay` で変えられます。
+- `timeout_seconds`：1 本の生成を打ち切るまでの秒数。既定は 900。
+- `retry_delays_seconds`：混雑したときに再試行するまでの秒数の並び。既定は `[30, 60, 120]`。
 
 `profile` の設定:
 
@@ -246,6 +260,7 @@ runner は次のどちらかで書きます。
 
 - CLI の本体は `packages/onajimi/src/main.js` の `main({ argv, preset })` です。npm の入口（`packages/onajimi/bin/onajimi.js`）はルール集をパッケージ名で読み込み、リポジトリの `bin/onajimi` は相対パスで読み込んで渡します。root の決め方はどちらも同じです。そのため、リポジトリの中では `packages/onajimi/bin/onajimi.js` を直接実行できません。
 - ルートの package.json はプラグイン用の依存で、レジストリにある版を固定したものだけを書きます。CLI とルール集の依存を変えたら、ルートにも同じ版を足します（食い違うとテストが落ちます）。
+- ルール集とプロファイラで同じ数え方をするため、CLI はルール集の `rules/count.js`（太字・箇条書き・字数の数え方）・`rules/regexp.js`（`/正規表現/` の読み方）・`rules/preset-rules.js` も使います。これもルール本体と同じく入口が読み込み、`setPresetLib` で渡します（npm の入口はパッケージ名で、リポジトリの `bin/onajimi` は相対パスで読み込みます）。
 - 公開した状態を試すには、両方を `npm pack` し、同じディレクトリに 2 つの tgz を `npm install` します。
 - ルートの NOTICE は、2 つのパッケージの NOTICE をつないだものです（食い違うとテストが落ちます）。
 

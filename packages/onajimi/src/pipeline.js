@@ -1,13 +1,10 @@
 import path from "node:path";
 import { build } from "./build.js";
-import { computeSplit, loadCorpus, saveSplit } from "./corpus.js";
+import { computeSplit, loadCorpus, saveSplit, splitText } from "./corpus.js";
 import { estimateControl, renderEstimate, runControl } from "./control.js";
+import { EXIT, needsYesMessage, stopOf } from "./exit.js";
 import { runProfile } from "./profile.js";
 import { writeReview } from "./review.js";
-
-export const NEEDS_YES = 5;
-
-const splitText = (split) => `profile ${split.profile.length} 本、dev ${split.dev.length} 本、test ${split.test.length} 本、holdout ${split.holdout.length} 本`;
 
 export const runPipeline = async ({ root, author, preset, limit, delaySeconds, estimate = false, yes = false, log = () => {}, say = () => {} }) => {
   const planned = computeSplit({ root, author });
@@ -25,8 +22,8 @@ export const runPipeline = async ({ root, author, preset, limit, delaySeconds, e
     if (estimate) {
       return 0;
     }
-    say("対照を生成するには、見積もりを人に見せて同意を得てから --yes を付けて同じコマンドを実行する。");
-    return NEEDS_YES;
+    say(needsYesMessage("対照を"));
+    return EXIT.NEEDS_YES;
   }
   if (planned.changed) {
     saveSplit({ root, author }, planned);
@@ -36,15 +33,11 @@ export const runPipeline = async ({ root, author, preset, limit, delaySeconds, e
   for (const runner of runners) {
     const summary = await runControl({ root, author, corpus, runner, set: "all", limit, delaySeconds, log });
     say(`control ${runner}: 生成 ${summary.generated.length}（うち作り直し ${summary.stale.length}）、既存 ${summary.skipped.length}、失敗 ${summary.failed.length}`);
-    if (summary.rateLimited) {
-      say(`control ${runner}: ${summary.rateLimited.slug} で回数制限に当たって止めた。時間をおいて同じコマンドで再開する。`);
-      stopped = stopped || 3;
-    } else if (summary.unavailable) {
-      say(`control ${runner}: ${summary.unavailable.slug} で混雑が続いたので止めた。時間をおいて同じコマンドで再開する。`);
-      stopped = stopped || 4;
-    } else if (summary.failed.length > 0) {
-      stopped = stopped || 1;
+    const stop = stopOf(summary, "slug");
+    if (stop) {
+      say(`control ${runner}: ${stop.message}`);
     }
+    stopped ||= stop?.code ?? (summary.failed.length > 0 ? EXIT.FAILED : 0);
   }
   if (stopped !== 0) {
     say("対照がそろっていないので、profile と review は実行していない。");

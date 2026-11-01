@@ -1,17 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
-import YAML from "yaml";
 import { build } from "./build.js";
 import { corpusPaths, loadCorpus } from "./corpus.js";
 import { disablesCheck } from "./accept.js";
-import { authorDocsOf, renderEval, renderFinding, runEval, truncate } from "./eval.js";
-import { docRates, featuresOfMarkdown } from "./profile.js";
-import { matchCount } from "./tokens.js";
+import { authorDocsOf, readProfileOutput } from "./docs.js";
+import { renderEval, renderFinding, runEval, truncate } from "./eval.js";
+import { docMatchCount, docRates, tokenizeProse } from "./tokens.js";
+import { mapSeries } from "./util.js";
 
 const MESSAGE_MAX = 70;
 const REVIEW_LIMITS = { orthography: 30, orthography_review: 15, density: 30, findings: 100, hints_per_line: 8 };
-
-export { truncate };
 
 const zText = (z) =>
   Object.entries(z ?? {})
@@ -161,15 +159,12 @@ export const renderReview = ({ author, proposal, thresholds, evalRows, findings,
   return `${lines.join("\n").trimEnd()}\n`;
 };
 
-export const devStats = async (corpus, proposal) => {
+const devStats = async (corpus, proposal) => {
   const options = { skipParagraphs: corpus.config.skipParagraphs };
-  const docs = [];
-  for (const doc of authorDocsOf(corpus.dev)) {
-    docs.push(await featuresOfMarkdown(doc.text, options));
-  }
+  const docs = await mapSeries(authorDocsOf(corpus.dev), (doc) => tokenizeProse(doc.text, options));
   const stats = {};
   for (const entry of proposal.model_leaning ?? []) {
-    const counts = docs.map((doc) => doc.strTokens.reduce((sum, str) => sum + matchCount(str.tokens, entry.tokens), 0));
+    const counts = docs.map((doc) => docMatchCount(doc, entry.tokens));
     stats[entry.id] = { count: counts.reduce((sum, n) => sum + n, 0), docs: counts.filter((n) => n > 0).length };
   }
   for (const entry of proposal.density ?? []) {
@@ -184,22 +179,14 @@ export const devStats = async (corpus, proposal) => {
 };
 
 export const writeReview = async ({ root, author, preset }) => {
-  const dir = corpusPaths(root, author).profile;
-  const read = (name) => {
-    const file = path.join(dir, name);
-    if (!fs.existsSync(file)) {
-      throw new Error(`${path.relative(process.cwd(), file)} がない。先に onajimi profile --author ${author} を実行する。`);
-    }
-    return YAML.parse(fs.readFileSync(file, "utf8"));
-  };
-  const proposal = read("proposal.yml");
-  const thresholds = read("thresholds.yml");
+  const proposal = readProfileOutput(root, author, "proposal.yml");
+  const thresholds = readProfileOutput(root, author, "thresholds.yml");
   const { stale } = build({ root, author, check: true });
   const corpus = loadCorpus(root, author);
   const { rows: evalRows, findings } = await runEval({ root, author, preset, set: "dev", details: true });
   const dev = await devStats(corpus, proposal);
   const text = renderReview({ author, proposal, thresholds, evalRows, findings, stale, dev });
-  const file = path.join(dir, "review.md");
+  const file = path.join(corpusPaths(root, author).profile, "review.md");
   fs.writeFileSync(file, text);
   return { file, lines: text.split("\n").length - 1 };
 };

@@ -50,7 +50,7 @@ bin/onajimi lint --root . --author amane draft.md  # 下書きを検査する
 
 指摘は「直せ」ではなく「ここが筆者の癖から外れている」という目印です。直すかどうかは、文脈を見て決めます。
 
-直したあとは、数値と否定が変わっていないかを確かめます。
+直したあとは、数値と否定、問いと推量の文の数が変わっていないかを確かめます。
 
 ```sh
 bin/onajimi guard draft.md out.md         # 変わっていれば理由を出して 1 で終わる
@@ -73,13 +73,11 @@ claude plugin marketplace add ./
 claude plugin install onajimi@oh-my-onajimi
 ```
 
-筆者のデータは `~/.local/share/onajimi`（`XDG_DATA_HOME` を設定していれば `$XDG_DATA_HOME/onajimi`）に置きます。別の場所にしたいときは、`~/.bashrc` か Claude Code の settings.json の `env` で環境変数 `ONAJIMI_ROOT` を設定します。今どこを使っているかは `bin/onajimi root` で分かります。このリポジトリにあるプロファイルを使うには、そこへ写します。
+筆者のデータは既定で `~/.local/share/onajimi` に置き、プラグインを外しても残ります（場所の変え方と、プラグイン用データディレクトリを使わない理由は [docs/reference.md](docs/reference.md#データの置き場所root) にあります）。このリポジトリにあるプロファイルを使うには、そこへ写します。
 
 ```sh
 bin/onajimi import --from . --author amane
 ```
-
-Claude Code のプラグイン用データディレクトリは使いません。このディレクトリはプラグインを外すと既定で消えますが、筆者のデータには、生成にお金と時間のかかる比較用の記事や、人が選んで作った辞書が入っているからです。ここに置いたデータは、プラグインを外しても残ります。
 
 あとは、Claude Code に記事を書いてもらうときに「onajimi で amane に寄せて仕上げて」のように頼みます。
 

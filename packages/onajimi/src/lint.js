@@ -8,10 +8,13 @@ import sentenceLength from "textlint-rule-sentence-length";
 import maxTen from "textlint-rule-max-ten";
 import { generatedDir } from "./paths.js";
 import { blankLooseFrontmatter } from "./prose.js";
+import { presetRules } from "./preset.js";
 
 const RULE_NAMES = { prh: "orthography" };
 
-const ruleName = (ruleId) => RULE_NAMES[ruleId] ?? ruleId.replace(/^onajimi\//u, "");
+export const ruleName = (ruleId) => RULE_NAMES[ruleId] ?? ruleId.replace(/^onajimi\//u, "");
+
+export const flatMessage = (message) => message.replace(/\s*\n\s*/gu, " ");
 
 const rewriteMessage = (ruleId, message) => {
   if (ruleId === "sentence-length") {
@@ -26,13 +29,14 @@ const rewriteMessage = (ruleId, message) => {
       return `読点が多い: 1文に「${match[1]}」が${match[2]}個以上（目安 ${Number(match[2]) - 1} 個以下）。`;
     }
   }
-  return message.replace(/\s*\n\s*/gu, " ");
+  return flatMessage(message);
 };
 
-export const formatMessages = (messages) =>
-  [...messages]
-    .sort((a, b) => a.line - b.line || a.column - b.column)
-    .map((m) => `${m.line}:${m.column} ${ruleName(m.ruleId)} ${rewriteMessage(m.ruleId, m.message)}`);
+export const formatMessage = (m) => `${m.line}:${m.column} ${ruleName(m.ruleId)} ${rewriteMessage(m.ruleId, m.message)}`;
+
+export const byPosition = (a, b) => a.line - b.line || a.column - b.column;
+
+const formatMessages = (messages) => [...messages].sort(byPosition).map(formatMessage);
 
 const interop = (mod) => (mod && mod.__esModule ? mod.default : mod);
 
@@ -42,13 +46,6 @@ const PLUGINS = [
   { pluginId: "@textlint/textlint-plugin-text", plugin: interop(textPlugin), options: true },
   { pluginId: "@textlint/textlint-plugin-markdown", plugin: interop(markdownPlugin), options: true },
 ];
-
-const presetRules = (preset, userOptions) =>
-  Object.entries(preset.rules).map(([key, rule]) => {
-    const user = userOptions[key];
-    const options = user === false ? false : user === undefined || user === true ? preset.rulesConfig[key] : user;
-    return { ruleId: `onajimi/${key}`, rule, options };
-  });
 
 export const kernelRules = (config, preset) =>
   Object.entries(config.rules ?? {}).flatMap(([ruleId, options]) => {

@@ -5,13 +5,14 @@ import { build } from "./build.js";
 import { lint } from "./lint.js";
 import { guard } from "./guard.js";
 import { authorDir, dataRoot, resolveRoot } from "./paths.js";
-import { SETS, loadCorpus, writeSplit } from "./corpus.js";
+import { SETS, loadCorpus, splitText, writeSplit } from "./corpus.js";
 import { analyzeProse } from "./prose.js";
 import { estimateControl, renderEstimate, runControl } from "./control.js";
 import { runProfile } from "./profile.js";
 import { renderEval, renderFinding, runEval } from "./eval.js";
 import { writeReview } from "./review.js";
-import { NEEDS_YES, runPipeline } from "./pipeline.js";
+import { runPipeline } from "./pipeline.js";
+import { EXIT, needsYesMessage, stopOf } from "./exit.js";
 import { acceptIds } from "./accept.js";
 import { initAuthor } from "./init.js";
 import { importAuthor } from "./import-author.js";
@@ -42,6 +43,68 @@ const usage = () => `使い方:
 
 const CREATES_AUTHOR = new Set(["init", "import"]);
 
+const OPTIONS = {
+  author: { type: "string" },
+  check: { type: "boolean" },
+  runner: { type: "string" },
+  set: { type: "string" },
+  only: { type: "string" },
+  "example-category": { type: "string" },
+  limit: { type: "string" },
+  delay: { type: "string" },
+  "dry-run": { type: "boolean" },
+  estimate: { type: "boolean" },
+  yes: { type: "boolean" },
+  details: { type: "boolean" },
+  paired: { type: "boolean" },
+  out: { type: "string" },
+  posts: { type: "string" },
+  from: { type: "string" },
+  force: { type: "boolean" },
+  root: { type: "string" },
+  report: { type: "boolean" },
+};
+
+const ALLOWED = {
+  build: ["author", "check"],
+  lint: ["author"],
+  guard: [],
+  init: ["author", "posts"],
+  root: [],
+  import: ["author", "from", "force"],
+  split: ["author"],
+  corpus: ["author"],
+  control: ["author", "runner", "set", "only", "limit", "delay", "dry-run", "estimate", "yes"],
+  profile: ["author", "paired", "out"],
+  review: ["author"],
+  pipeline: ["author", "estimate", "yes", "limit", "delay"],
+  accept: ["author"],
+  eval: ["author", "set", "details"],
+  abc: ["author", "runner", "set", "only", "example-category", "limit", "delay", "dry-run", "estimate", "yes", "report"],
+};
+
+const checkOptions = (command, values) => {
+  const allowed = ALLOWED[command];
+  if (!allowed) {
+    return;
+  }
+  const extra = Object.keys(values).filter((name) => name !== "root" && !allowed.includes(name));
+  if (extra.length > 0) {
+    throw new Error(`${command} には ${extra.map((name) => `--${name}`).join("・")} を使えない`);
+  }
+};
+
+const nonNegativeInteger = (values, name) => {
+  const raw = values[name];
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!/^\d+$/u.test(raw)) {
+    throw new Error(`--${name} は 0 以上の整数で書く: ${raw}`);
+  }
+  return Number(raw);
+};
+
 const ROOT_SOURCES = {
   "--root": "--root で指定した",
   ONAJIMI_ROOT: "環境変数 ONAJIMI_ROOT から",
@@ -50,31 +113,10 @@ const ROOT_SOURCES = {
 
 const dispatch = async ({ argv, preset }) => {
   const [command, ...rest] = argv;
-  const { values, positionals } = parseArgs({
-    args: rest,
-    allowPositionals: true,
-    options: {
-      author: { type: "string" },
-      check: { type: "boolean", default: false },
-      runner: { type: "string" },
-      set: { type: "string" },
-      only: { type: "string" },
-      "example-category": { type: "string" },
-      limit: { type: "string" },
-      delay: { type: "string" },
-      "dry-run": { type: "boolean", default: false },
-      estimate: { type: "boolean", default: false },
-      yes: { type: "boolean", default: false },
-      details: { type: "boolean", default: false },
-      paired: { type: "boolean", default: false },
-      out: { type: "string" },
-      posts: { type: "string" },
-      from: { type: "string" },
-      force: { type: "boolean", default: false },
-      root: { type: "string" },
-      report: { type: "boolean", default: false },
-    },
-  });
+  const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: OPTIONS });
+  checkOptions(command, values);
+  const limit = nonNegativeInteger(values, "limit");
+  const delaySeconds = nonNegativeInteger(values, "delay");
   const { root, source } = resolveRoot(values.root);
   const needAuthor = () => {
     if (!values.author) {
@@ -98,7 +140,7 @@ const dispatch = async ({ argv, preset }) => {
       for (const name of result.stale) {
         console.log(`generated/${name} が profile.yml と食い違っている。onajimi build を実行する。`);
       }
-      return 1;
+      return EXIT.FAILED;
     }
     return 0;
   }
@@ -107,7 +149,7 @@ const dispatch = async ({ argv, preset }) => {
     for (const line of lines) {
       console.log(line);
     }
-    return lines.length > 0 ? 1 : 0;
+    return lines.length > 0 ? EXIT.FAILED : 0;
   }
   if (command === "guard" && positionals.length === 2) {
     const [before, after] = positionals.map((file) => fs.readFileSync(file, "utf8"));
@@ -115,11 +157,11 @@ const dispatch = async ({ argv, preset }) => {
     for (const problem of problems) {
       console.log(problem);
     }
-    return problems.length > 0 ? 1 : 0;
+    return problems.length > 0 ? EXIT.FAILED : 0;
   }
   if (command === "split" && positionals.length === 0) {
     const { split, added, changed } = writeSplit({ root: root, author: needAuthor() });
-    console.log(`profile ${split.profile.length} 本、dev ${split.dev.length} 本、test ${split.test.length} 本、holdout ${split.holdout.length} 本`);
+    console.log(splitText(split));
     console.log(changed ? (added.length > 0 ? `holdout に入れた記事: ${added.join(", ")}` : "split.yml を書いた。") : "変更なし。");
     return 0;
   }
@@ -145,15 +187,15 @@ const dispatch = async ({ argv, preset }) => {
         runner: values.runner,
         set: values.set ?? "profile",
         only: values.only?.split(",").filter(Boolean),
-        delaySeconds: values.delay === undefined ? undefined : Number(values.delay),
+        delaySeconds,
       });
       console.log(renderEstimate(estimate));
       if (values.estimate) {
         return 0;
       }
       if (estimate.generate > 0) {
-        console.log("対照を生成するには、見積もりを人に見せて同意を得てから --yes を付けて同じコマンドを実行する。");
-        return NEEDS_YES;
+        console.log(needsYesMessage("対照を"));
+        return EXIT.NEEDS_YES;
       }
     }
     const summary = await runControl({
@@ -162,23 +204,20 @@ const dispatch = async ({ argv, preset }) => {
       runner: values.runner,
       set: values.set ?? "profile",
       only: values.only?.split(",").filter(Boolean),
-      limit: values.limit === undefined ? undefined : Number(values.limit),
-      delaySeconds: values.delay === undefined ? undefined : Number(values.delay),
+      limit,
+      delaySeconds,
       dryRun: values["dry-run"],
       log: (line) => console.error(line),
     });
     if (!values["dry-run"]) {
       console.log(`生成 ${summary.generated.length}（うち作り直し ${summary.stale.length}）、既存 ${summary.skipped.length}、失敗 ${summary.failed.length}`);
     }
-    if (summary.rateLimited) {
-      console.log(`${summary.rateLimited.slug} で回数制限に当たって止めた。時間をおいて同じコマンドで再開する。`);
-      return 3;
+    const stop = stopOf(summary, "slug");
+    if (stop) {
+      console.log(stop.message);
+      return stop.code;
     }
-    if (summary.unavailable) {
-      console.log(`${summary.unavailable.slug} で混雑が続いたので止めた。時間をおいて同じコマンドで再開する。`);
-      return 4;
-    }
-    return summary.failed.length > 0 ? 1 : 0;
+    return summary.failed.length > 0 ? EXIT.FAILED : 0;
   }
   if (command === "profile" && positionals.length === 0) {
     const result = await runProfile({ root: root, author: needAuthor(), paired: values.paired, outDir: values.out });
@@ -219,8 +258,8 @@ const dispatch = async ({ argv, preset }) => {
       root,
       author: needAuthor(),
       preset,
-      limit: values.limit === undefined ? undefined : Number(values.limit),
-      delaySeconds: values.delay === undefined ? undefined : Number(values.delay),
+      limit,
+      delaySeconds,
       estimate: values.estimate,
       yes: values.yes,
       log: (line) => console.error(line),
@@ -247,8 +286,8 @@ const dispatch = async ({ argv, preset }) => {
       set: values.set ?? "test",
       only: values.only?.split(",").filter(Boolean),
       exampleCategory: values["example-category"],
-      limit: values.limit === undefined ? undefined : Number(values.limit),
-      delaySeconds: values.delay === undefined ? undefined : Number(values.delay),
+      limit,
+      delaySeconds,
       estimate: values.estimate,
       yes: values.yes,
       dryRun: values["dry-run"],
@@ -263,7 +302,7 @@ const dispatch = async ({ argv, preset }) => {
     return 0;
   }
   console.error(usage());
-  return 2;
+  return EXIT.USAGE;
 };
 
 export const main = async (options) => {
@@ -271,6 +310,6 @@ export const main = async (options) => {
     return await dispatch(options);
   } catch (error) {
     console.error(error.message);
-    return 2;
+    return EXIT.USAGE;
   }
 };

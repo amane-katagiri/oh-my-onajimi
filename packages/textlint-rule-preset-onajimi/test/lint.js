@@ -5,13 +5,7 @@ const fs = require("node:fs");
 const { TextlintKernel } = require("@textlint/kernel");
 const markdown = require("@textlint/textlint-plugin-markdown").default;
 const preset = require("..");
-
-const presetRules = (userOptions) =>
-  Object.entries(preset.rules).map(([key, rule]) => {
-    const user = userOptions[key];
-    const options = user === false ? false : user === undefined || user === true ? preset.rulesConfig[key] : user;
-    return { ruleId: `onajimi/${key}`, rule, options };
-  });
+const { presetRules } = require("../rules/preset-rules");
 
 const lintFixture = async (fixture, file) => {
   const dir = path.join(__dirname, "fixtures", fixture);
@@ -22,7 +16,7 @@ const lintFixture = async (fixture, file) => {
     filePath,
     configBaseDir: dir,
     plugins: [{ pluginId: "markdown", plugin: markdown }],
-    rules: presetRules(config.rules["preset-onajimi"]).filter((rule) => rule.options !== false),
+    rules: presetRules(preset, config.rules["preset-onajimi"]),
   });
   return result.messages;
 };

@@ -1,3 +1,7 @@
+import { tokenize } from "kuromojin";
+import { analyzeProse } from "./prose.js";
+import { mapSeries } from "./util.js";
+
 const ASCII_ONLY = /^[\x21-\x7e]+$/u;
 const SENTENCE_END = /[。！？!?\n]/u;
 const SNIPPET_MAX = 40;
@@ -52,7 +56,7 @@ const matchesAt = (tokens, at, conditions) =>
     return token !== undefined && Object.entries(cond).every(([key, value]) => token[key] === value);
   });
 
-export const matchCount = (tokens, conditions) => {
+const matchCount = (tokens, conditions) => {
   let count = 0;
   for (let at = 0; at + conditions.length <= tokens.length; at += 1) {
     if (matchesAt(tokens, at, conditions)) {
@@ -61,3 +65,13 @@ export const matchCount = (tokens, conditions) => {
   }
   return count;
 };
+
+export const tokenizeProse = async (markdown, options) => {
+  const { strs, chars } = analyzeProse(markdown, options);
+  return { strTokens: await mapSeries(strs, async (text) => ({ text, tokens: await tokenize(text) })), chars };
+};
+
+export const docMatchCount = (doc, conditions) => doc.strTokens.reduce((sum, str) => sum + matchCount(str.tokens, conditions), 0);
+
+export const docRates = (docs, conditions, minChars) =>
+  docs.filter((doc) => doc.chars >= minChars).map((doc) => (docMatchCount(doc, conditions) / doc.chars) * 1000);

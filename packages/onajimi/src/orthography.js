@@ -1,5 +1,5 @@
 import { tokenize } from "kuromojin";
-import { addCount, isAscii, mergeCounts, nextKey, snippet, topCounts } from "./tokens.js";
+import { addCount, formatCounts, isAscii, mergeCounts, nextKey, snippet, topCounts } from "./tokens.js";
 
 const HAN = /[\p{Script=Han}々〆ヶ]/u;
 const SINGLE_HAN = /^\p{Script=Han}$/u;
@@ -23,7 +23,7 @@ const toKatakana = (word) => word.replace(/[ぁ-ゖ]/gu, (char) => String.fromCh
 
 const readings = new Map();
 
-export const readingOf = async (word) => {
+const readingOf = async (word) => {
   if (!readings.has(word)) {
     const tokens = await tokenize(word);
     const known = tokens.length > 0 && tokens.every((token) => token.reading && token.reading !== "*");
@@ -103,7 +103,7 @@ export const aggregateVariants = (docs) => {
   return total;
 };
 
-export const choiceZ = (ax, ay, cx, cy) => {
+const choiceZ = (ax, ay, cx, cy) => {
   const delta = Math.log((ax + 0.5) / (ay + 0.5)) - Math.log((cx + 0.5) / (cy + 0.5));
   return delta / Math.sqrt(1 / (ax + 0.5) + 1 / (ay + 0.5) + 1 / (cx + 0.5) + 1 / (cy + 0.5));
 };
@@ -117,7 +117,7 @@ const commonPrefix = (words) =>
     return prefix.slice(0, at);
   });
 
-const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\/]/gu, "\\$&");
+export const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\/]/gu, "\\$&");
 
 export const prhEntry = (expected, pattern, patternSurfaces) => {
   const forms = [pattern, ...patternSurfaces];
@@ -220,8 +220,8 @@ export const proposeOrthography = async (author, controls, params) => {
         author: { [xBasic]: ax, [yBasic]: ay },
         author_docs: author.get(x).docs,
         control,
-        author_next: topCounts(author.get(x).next).map(([key, n]) => `${key} ${n}`).join(", "),
-        control_next: topCounts(yControl.next).map(([key, n]) => `${key} ${n}`).join(", "),
+        author_next: formatCounts(author.get(x).next),
+        control_next: formatCounts(yControl.next),
         author_example: author.get(x).example,
         control_example: yControl.example,
       },

@@ -9,7 +9,7 @@ const TEMPLATE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 
 const EMPTY_PROFILE = "model_leaning: []\nauthor_leaning: []\northography: []\ndensity: []\nthresholds: {}\nallow: []\n";
 
-export const starterCorpus = ({ posts } = {}) => {
+const starterCorpus = ({ posts } = {}) => {
   const text = fs.readFileSync(TEMPLATE, "utf8");
   const filled = posts === undefined ? text : text.replace(/^posts: .*$/mu, `posts: ${YAML.stringify(posts).trim()}`);
   parseCorpusConfig(filled);

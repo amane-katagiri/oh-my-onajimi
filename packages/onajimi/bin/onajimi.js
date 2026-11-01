@@ -1,5 +1,11 @@
 #!/usr/bin/env node
 import preset from "textlint-rule-preset-onajimi";
+import count from "textlint-rule-preset-onajimi/rules/count.js";
+import regexp from "textlint-rule-preset-onajimi/rules/regexp.js";
+import presetRulesLib from "textlint-rule-preset-onajimi/rules/preset-rules.js";
 import { main } from "../src/main.js";
+import { setPresetLib } from "../src/preset.js";
+
+setPresetLib({ count, regexp, presetRules: presetRulesLib.presetRules });
 
 process.exitCode = await main({ argv: process.argv.slice(2), preset });
