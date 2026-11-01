@@ -23,6 +23,8 @@ const quotedLines = (markdown) => {
   return lines;
 };
 
+const flat = (message) => message.replace(/\s*\n\s*/gu, " ");
+
 const ruleName = (ruleId) => (ruleId === "prh" ? "orthography" : ruleId.replace(/^onajimi\//u, ""));
 
 export const lintDoc = async (lintText, doc) => {
@@ -37,21 +39,37 @@ export const lintDoc = async (lintText, doc) => {
       line: message.line,
       column: message.column,
       rule: ruleName(message.ruleId),
-      message: message.message.replace(/\s*\n\s*/gu, " "),
+      message: flat(message.message),
       text: (lines[message.line - 1] ?? "").trim(),
     }));
   return { findings, quoted: messages.length - findings.length };
 };
 
-const SPREAD = /（目安 \d+ (回|個)まで）。\d+ \1減らす。$/u;
+export const documentKeyOf = (rules, preset) => {
+  const phrase = rules.find(({ ruleId }) => ruleId === "onajimi/phrase-density");
+  // 長い順に試すのは、ある項目のメッセージが別の項目のメッセージで始まるときに長いほうを取るため。
+  const entries = (phrase?.options.entries ?? [])
+    .map(({ message }, index) => ({ lead: flat(message), key: `phrase-density#${index}` }))
+    .sort((a, b) => b.lead.length - a.lead.length);
+  const boldLead = preset.rules["decoration-density"].BOLD_LEAD;
+  return ({ rule, message }) => {
+    if (rule === "phrase-density") {
+      return entries.find(({ lead }) => message.startsWith(lead))?.key;
+    }
+    if (rule === "decoration-density" && message.startsWith(boldLead)) {
+      return "decoration-density#bold";
+    }
+    return undefined;
+  };
+};
 
-const documentLevel = (findings) => {
+const documentLevel = (findings, documentKey) => {
   const seen = new Set();
-  return findings.filter(({ rule, message }) => {
-    if (!SPREAD.test(message)) {
+  return findings.filter((finding) => {
+    const key = documentKey(finding);
+    if (key === undefined) {
       return true;
     }
-    const key = `${rule}\n${message}`;
     if (seen.has(key)) {
       return false;
     }
@@ -67,7 +85,7 @@ const tally = (byRule, findings, field) => {
   }
 };
 
-export const scoreDocs = async (lintText, docs, options) => {
+export const scoreDocs = async (lintText, docs, options, documentKey) => {
   const byRule = {};
   let findings = 0;
   let documentLevelFindings = 0;
@@ -75,7 +93,7 @@ export const scoreDocs = async (lintText, docs, options) => {
   let chars = 0;
   for (const doc of docs) {
     const result = await lintDoc(lintText, doc);
-    const collapsed = documentLevel(result.findings);
+    const collapsed = documentLevel(result.findings, documentKey);
     quoted += result.quoted;
     findings += result.findings.length;
     documentLevelFindings += collapsed.length;
@@ -105,11 +123,12 @@ export const runEval = async ({ root, author, preset, set = "test", details = fa
   }
   const corpus = loadCorpus(root, author);
   const options = { skipParagraphs: corpus.config.skipParagraphs };
-  const lintText = await createAuthorLinter(root, author, preset);
+  const { lintText, rules } = await createAuthorLinter(root, author, preset);
+  const documentKey = documentKeyOf(rules, preset);
   const authorDocs = authorDocsOf(corpus[set]);
-  const rows = [{ label: `誤検出: 筆者 ${set}`, ...(await scoreDocs(lintText, authorDocs, options)) }];
+  const rows = [{ label: `誤検出: 筆者 ${set}`, ...(await scoreDocs(lintText, authorDocs, options, documentKey)) }];
   for (const runner of Object.keys(corpus.config.control.runners)) {
-    rows.push({ label: `検出: ${runner} ${set}`, ...(await scoreDocs(lintText, controlDocsOf(root, author, runner, corpus[set]), options)) });
+    rows.push({ label: `検出: ${runner} ${set}`, ...(await scoreDocs(lintText, controlDocsOf(root, author, runner, corpus[set]), options, documentKey)) });
   }
   if (!details) {
     return { rows };

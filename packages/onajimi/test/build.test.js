@@ -121,3 +121,8 @@ test("evidence and note are allowed on orthography entries and left out of the g
   const generated = fs.readFileSync(path.join(root, "authors/demo/generated/orthography.yml"), "utf8");
   assert.equal(generated, "version: 1\nrules:\n  - expected: できる\n    pattern: 出来る\n");
 });
+
+test("build rejects density entries that share a message", () => {
+  const entry = "  - tokens: [{ basic_form: 思う }]\n    max_per_1000: 1\n    message: 「思う」が多い。\n";
+  assert.throws(() => parseProfile(`density:\n${entry}  - tokens: [{ basic_form: 言う }]\n    max_per_1000: 1\n    message: 「言う」が多い。\n${entry}`), /density\[2\]: message が density\[0\] と同じ/u);
+});

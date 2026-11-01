@@ -114,7 +114,9 @@ bin/onajimi eval --author alice                       # 最後に 1 回だけ、
 ### eval
 
 - 既定はテスト用です。`--set dev|profile|test|holdout` で変えられます。
-- 「指摘」は箇所の数です。「文書単位」は、「K 回減らす」「K 個減らす」型の指摘（phrase-density と太字の密度）を、記事と項目の組ごとに 1 件と数えた数です。内訳のかっこ内も同じ数え方です。1000 字あたりは箇所の数から出します。
+- 「指摘」は箇所の数です。「文書単位」は、密度の指摘（phrase-density と太字の密度）を、記事と項目の組ごとに 1 件と数えた数です。内訳のかっこ内も同じ数え方です。1000 字あたりは箇所の数から出します。
+  - phrase-density の項目は、生成した `.textlintrc.json` の `entries` のどれのメッセージで始まるかで決めます（いくつも当てはまるときは長いほう）。太字の密度は記事ごとに 1 項目です。
+  - ほかのルールの指摘は、メッセージが「K 回減らす。」で終わっていても箇所ごとに数えます。
 - `--details` は、指摘を `slug:行 ルール メッセージ ｜ その行の文（60 字まで）` の形で 1 件ずつ（密度の指摘は箇所ごとに）出します。eval と同じ除外（`exclude_sections`、引用・表・HTML・コード）を当てます。テスト用と holdout には使えません。
 
 ## profile.yml
@@ -125,7 +127,7 @@ bin/onajimi eval --author alice                       # 最後に 1 回だけ、
 | `model_leaning` | `tokens`（kuromoji のトークン条件の並び）と `message`。重大度は error |
 | `author_leaning` | `tokens`、`author`（筆者側の言い方）、任意の `message`。重大度は warning |
 | `orthography` | textlint-rule-prh のエントリ（`expected` と `pattern` または `patterns`）。重大度は warning |
-| `density` | `tokens`、`max_per_1000`、`message`、任意の `min_chars` と `typical_per_1000`。地の文 1000 字あたりの出現数が `max_per_1000` を超えた文書では、出現した箇所すべてに「この文書では N 回（目安 M 回まで）。K 回減らす。」を添えて出す。M は `max_per_1000` × 地の文の字数 ÷ 1000 の切り捨て、K は N − M。`min_chars` 字未満の文書には出さない。`typical_per_1000` は見直し用の記録で、生成物には入らない。重大度は warning |
+| `density` | `tokens`、`max_per_1000`、`message`、任意の `min_chars` と `typical_per_1000`。地の文 1000 字あたりの出現数が `max_per_1000` を超えた文書では、出現した箇所すべてに「この文書では N 回（目安 M 回まで）。K 回減らす。」を添えて出す。M は `max_per_1000` × 地の文の字数 ÷ 1000 の切り捨て、K は N − M。`min_chars` 字未満の文書には出さない。`typical_per_1000` は見直し用の記録で、生成物には入らない。`message` はほかの項目と同じにできない（build が止まる）。重大度は warning |
 | `thresholds` | 下の表。書かなかった項目の検査は動かない |
 | `allow` | 一致した範囲がこの文字列（`/正規表現/` も可）を含むとき、model_leaning・author_leaning の指摘を出さない |
 

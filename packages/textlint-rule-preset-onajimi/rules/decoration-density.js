@@ -2,6 +2,8 @@
 
 const round = (value, digits) => Number(value.toFixed(digits));
 
+const BOLD_LEAD = "この文書の太字は ";
+
 const COLON_END = /[:：]\s*$/;
 const COLON_START = /^\s*[:：]/;
 
@@ -16,7 +18,7 @@ const isBoldLabelItem = (item) => {
   return COLON_END.test(textOf(first)) || (second !== undefined && second.type === "Str" && COLON_START.test(second.value));
 };
 
-module.exports = (context, options = {}) => {
+const rule = (context, options = {}) => {
   const { Syntax, RuleError, report } = context;
   const { maxBoldPer1000, maxListRatio, minChars = 0, maxBoldLabelItems, minEmphasisShare, minEmphasisMarks = 3, typicalEmphasisShare } = options;
   let proseChars = 0;
@@ -97,7 +99,7 @@ module.exports = (context, options = {}) => {
         if (per1000 > maxBoldPer1000) {
           // 0.3 × 10000 / 1000 が 2.999… になるのを丸めてから切り捨てる。
           const limit = Math.floor(Number(((maxBoldPer1000 * proseChars) / 1000).toFixed(6)));
-          const message = `この文書の太字は ${bolds.length} 個（目安 ${limit} 個まで）。${bolds.length - limit} 個減らす。`;
+          const message = `${BOLD_LEAD}${bolds.length} 個（目安 ${limit} 個まで）。${bolds.length - limit} 個減らす。`;
           for (const bold of bolds) {
             report(bold, new RuleError(message));
           }
@@ -112,3 +114,6 @@ module.exports = (context, options = {}) => {
     },
   };
 };
+
+module.exports = rule;
+module.exports.BOLD_LEAD = BOLD_LEAD;

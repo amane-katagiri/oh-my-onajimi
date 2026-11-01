@@ -4,6 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { run } from "./helpers.js";
 import { makeCorpusRoot, post } from "./corpus-helpers.js";
+import preset from "../../textlint-rule-preset-onajimi/index.js";
+import { documentKeyOf, renderEval, scoreDocs } from "../src/eval.js";
+import { kernelRules } from "../src/lint.js";
 
 test("eval prints false positives on test posts and detections on test-set controls", () => {
   const { root } = makeCorpusRoot({
@@ -35,17 +38,46 @@ test("finding lines keep at most 60 characters of the line around the column", a
   assert.ok([...around("う".repeat(80), 1)].length <= 60);
 });
 
-test("eval counts each occurrence and, separately, reduce-by-count findings once per document and entry", async () => {
-  const { scoreDocs, renderEval } = await import("../src/eval.js");
-  const spread = (line, entry) => ({ ruleId: "onajimi/phrase-density", line, column: 1, message: `${entry}この文書では 3 回（目安 1 回まで）。2 回減らす。` });
-  const label = (line) => ({ ruleId: "onajimi/decoration-density", line, column: 1, message: "太字のラベルと「:」で始まる箇条書き（この文書に 2 個、目安 0 個以下）。ラベルを外して文で書くか、段落にする。" });
-  const bold = (line) => ({ ruleId: "onajimi/decoration-density", line, column: 1, message: "この文書の太字は 2 個（目安 1 個まで）。1 個減らす。" });
-  const messages = { a: [spread(1, "「A」"), spread(2, "「A」"), spread(3, "「A」"), spread(4, "「B」"), label(5), label(6), bold(7), bold(8)], b: [spread(1, "「A」")] };
+const densityRules = (...messages) =>
+  kernelRules({ rules: { "preset-onajimi": { "phrase-density": { entries: messages.map((message) => ({ tokens: [{ surface_form: "x" }], max_per_1000: 1, message })) } } } }, preset);
+const spread = (line, entry) => ({ ruleId: "onajimi/phrase-density", line, column: 1, message: `${entry}この文書では 3 回（目安 1 回まで）。2 回減らす。` });
+const bold = (line) => ({ ruleId: "onajimi/decoration-density", line, column: 1, message: "この文書の太字は 2 個（目安 1 個まで）。1 個減らす。" });
+const score = async (rules, messages) => {
   const lintText = async (_text, file) => messages[file.replace(/\.md$/u, "")];
-  const docs = [{ slug: "a", text: "本文。\n".repeat(8) }, { slug: "b", text: "本文。\n" }];
-  const row = await scoreDocs(lintText, docs, {});
+  const docs = Object.keys(messages).map((slug) => ({ slug, text: "本文。\n".repeat(10) }));
+  return scoreDocs(lintText, docs, {}, documentKeyOf(rules, preset));
+};
+
+test("eval counts each occurrence and, separately, reduce-by-count findings once per document and entry", async () => {
+  const label = (line) => ({ ruleId: "onajimi/decoration-density", line, column: 1, message: "太字のラベルと「:」で始まる箇条書き（この文書に 2 個、目安 0 個以下）。ラベルを外して文で書くか、段落にする。" });
+  const row = await score(densityRules("「A」", "「B」"), {
+    a: [spread(1, "「A」"), spread(2, "「A」"), spread(3, "「A」"), spread(4, "「B」"), label(5), label(6), bold(7), bold(8)],
+    b: [spread(1, "「A」")],
+  });
   assert.equal(row.findings, 9);
   assert.equal(row.documentLevel, 6);
   assert.deepEqual(row.byRule, { "phrase-density": { findings: 5, documentLevel: 3 }, "decoration-density": { findings: 4, documentLevel: 3 } });
   assert.match(renderEval([{ label: "x", ...row }]).split("\n")[2], /^\| x \| 2 \| \d+ \| 9 \| 6 \| [\d.]+ \| phrase-density 5（3）, decoration-density 4（3） \| 0 \|$/u);
+});
+
+test("eval tells density entries apart by the configured entry when one message starts with another", async () => {
+  const rules = densityRules("「A」が多い。", "「A」が多い。言い切る。");
+  const same = (line, entry) => ({ ...spread(line, entry), message: `${entry}この文書では 2 回（目安 1 回まで）。1 回減らす。` });
+  const row = await score(rules, { a: [same(1, "「A」が多い。"), same(2, "「A」が多い。"), same(3, "「A」が多い。言い切る。"), same(4, "「A」が多い。言い切る。")] });
+  assert.equal(row.findings, 4);
+  assert.equal(row.documentLevel, 2);
+});
+
+test("eval collapses bold density once per document", async () => {
+  const row = await score(densityRules(), { a: [bold(1), bold(2), bold(3)], b: [bold(1), bold(2)] });
+  assert.deepEqual(row.byRule, { "decoration-density": { findings: 5, documentLevel: 2 } });
+});
+
+test("eval counts every finding of other rules even when the message ends like a density finding", async () => {
+  const lookalike = (ruleId, line) => ({ ruleId, line, column: 1, message: "「A」が多い（目安 1 回まで）。2 回減らす。" });
+  const row = await score(densityRules("「A」"), {
+    a: [lookalike("onajimi/model-leaning", 1), lookalike("onajimi/model-leaning", 2), lookalike("onajimi/decoration-density", 3), lookalike("onajimi/decoration-density", 4)],
+  });
+  assert.equal(row.findings, 4);
+  assert.equal(row.documentLevel, 4);
 });

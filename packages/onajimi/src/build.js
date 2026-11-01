@@ -127,6 +127,13 @@ export const parseProfile = (text) => {
     };
   });
 
+  density.forEach((entry, index) => {
+    const first = density.findIndex(({ message }) => message === entry.message);
+    if (first !== index) {
+      fail(`density[${index}]`, `message が density[${first}] と同じ。eval が別の項目として数えられないので、メッセージを変える`);
+    }
+  });
+
   const allow = asList(profile, "allow");
   allow.forEach((value, index) => {
     if (typeof value !== "string" || value === "") {

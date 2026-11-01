@@ -66,18 +66,16 @@ export const createAuthorLinter = async (root, author, preset) => {
   if (!fs.existsSync(configFilePath)) {
     throw new Error(`${path.relative(process.cwd(), configFilePath)} がない。先に onajimi build --author ${author} を実行する。`);
   }
-  const options = {
-    configBaseDir: path.dirname(configFilePath),
-    rules: kernelRules(JSON.parse(fs.readFileSync(configFilePath, "utf8")), preset),
-    plugins: PLUGINS,
-  };
+  const rules = kernelRules(JSON.parse(fs.readFileSync(configFilePath, "utf8")), preset);
+  const options = { configBaseDir: path.dirname(configFilePath), rules, plugins: PLUGINS };
   const kernel = new TextlintKernel();
-  return async (text, filePath) =>
+  const lintText = async (text, filePath) =>
     (await kernel.lintText(blankLooseFrontmatter(text), { ...options, ext: path.extname(filePath), filePath })).messages;
+  return { lintText, rules };
 };
 
 export const lint = async ({ root, author, file, preset }) => {
-  const lintText = await createAuthorLinter(root, author, preset);
+  const { lintText } = await createAuthorLinter(root, author, preset);
   const filePath = path.resolve(file);
   return formatMessages(await lintText(fs.readFileSync(filePath, "utf8"), filePath));
 };
