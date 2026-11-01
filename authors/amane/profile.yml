@@ -1,65 +1,74 @@
 note: >-
-  v0 の仮置き。手で書いた小さな辞書としきい値で、プロファイラ（v1）の出力が出たら置き換える。
-  evidence の数は tech/ugoki 記事の本文（コードブロックを除く）を文字列で数えただけで、対照コーパスとの比較はまだしていない。
+  初版。onajimi profile（記事 tech/ugoki のプロファイル用 64 本 と、同じ見出しで書かせた opus/gemini 各 64 本）の結果から人が選んだ。
+  evidence の数はプロファイル用の記事での出現数。筆者の記事でほぼ使われず、両方のモデルが使う語だけを model_leaning にした。
+  ふと・思わず・推奨などは記事では使わないが小説（lily）では使うので、このプロファイルは記事専用。
+  対照の指示に ai_summary を渡しているので、ai_summary に出る語（試み など）は対照側に写り込んでいる恐れがあり、入れていない。
 
 model_leaning:
   - tokens:
-      - surface_form: 静か
-      - surface_form: に
-      - basic_form: 壊れる
-    message: 「静かに壊れる」は筆者の言い方ではない。何がどう壊れるのかを具体的に書く。
+      - basic_form: た
+      - basic_form: 瞬間
+    message: 「〜た瞬間」は筆者の記事では使わない。時間の前後関係をそのまま書く。
     evidence:
-      author_count: 0
+      author: 1
+      opus: 26
+      gemini: 70
   - tokens:
-      - surface_form: 時間
-      - surface_form: を
-      - basic_form: 溶かす
-    message: 「時間を溶かす」は筆者の言い方ではない。何に何時間使ったかを書く。
+      - basic_form: ふと
+    message: 「ふと」は筆者の記事では使わない。消すか、きっかけを書く。
     evidence:
-      author_count: 0
+      author: 1
+      opus: 9
+      gemini: 14
   - tokens:
-      - surface_form: 過言
-      - surface_form: で
-      - surface_form: は
-    message: 「〜と言っても過言ではない」は筆者の言い方ではない。言い切るか、根拠を書く。
+      - basic_form: 思わず
+    message: 「思わず」は筆者の記事では使わない。消すか、具体的な反応を書く。
     evidence:
-      author_count: 0
+      author: 1
+      opus: 8
+      gemini: 14
   - tokens:
-      - surface_form: 鍵
-      - surface_form: を
-      - basic_form: 握る
-    message: 「鍵を握る」は筆者の言い方ではない。何が決め手なのかをそのまま書く。
+      - basic_form: どこ
+      - basic_form: か
+    message: 「どこか」は筆者の記事ではほぼ使わない。場所なら具体的に書き、ぼかしなら消す。
     evidence:
-      author_count: 0
-  - tokens:
-      - surface_form: 深
-      - basic_form: 掘る
-    message: 「深掘り」は筆者の言い方ではない。「詳しく調べる」「掘り下げる」など。
-    evidence:
-      author_count: 0
+      author: 2
+      opus: 46
+      gemini: 55
 
 author_leaning:
   - tokens:
       - basic_form: 大切
     author: 重要
+    message: 筆者の記事では「大切」は少なく「重要」が多い。「大切にする」のように言い換えられない所はそのままでよい。
     evidence:
-      author_count: 5
-      author_alternative_count: 48
+      author: 1
+      author_alternative: 30
+      opus: 23
+      gemini: 13
+  - tokens:
+      - basic_form: 推奨
+    author: おすすめ
+    evidence:
+      author: 2
+      author_alternative: 35
+      opus: 8
+      gemini: 15
 
 orthography:
-  - expected: 様々
-    pattern: さまざま
   - expected: 全て
     pattern: すべて
   - expected: 分か
     pattern: /わか(?=[らりるれろっ])/
-  - expected: よ
-    pattern: /良(?=[いくかけ])/
+  - expected: 気付
+    pattern: 気づ
+  - expected: 様々
+    pattern: さまざま
 
 thresholds:
-  sentence_length: 180
-  max_ten: 4
-  bold_per_1000: 3
-  list_ratio: 0.3
+  sentence_length: 253
+  max_ten: 6
+  bold_per_1000: 4
+  list_ratio: 0.46
 
 allow: []

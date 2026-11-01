@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
-import { aggregate, compare, docFeatures, featuresOfMarkdown, isContentWord, logOddsZ, snippet } from "../src/profile.js";
+import { aggregate, compare, docFeatures, featuresOfMarkdown, isContentWord, logOddsZ, proposeModelLeaning, proposeRateDifferences, snippet } from "../src/profile.js";
 import { measureArticle, proposeThresholds } from "../src/stats.js";
 import { run } from "./helpers.js";
 import { makeCorpusRoot, post } from "./corpus-helpers.js";
@@ -54,6 +54,23 @@ test("compare keeps model-leaning features seen in enough control documents", ()
   assert.ok(unigrams[0].z.m < 0);
   assert.equal(unigrams.at(-1).feature, "猫/名詞");
   assert.equal(unigrams.at(-1).authorLeaning, true);
+});
+
+test("the dictionary proposal takes only words the author almost never uses; frequency gaps go to rate differences", () => {
+  const row = (feature, authorDocs, z) => ({
+    feature,
+    tokens: [{ basic_form: feature }],
+    author: { count: authorDocs * 3, docs: authorDocs },
+    z: { m: z },
+    modelLeaning: { m: true },
+    control: { m: { count: 30, docs: 10, surfaces: new Map([[feature, 30]]) } },
+  });
+  const rows = [row("た+。", 60, -14), row("すべて", 0, -3.3), row("わかる", 1, -2.5), row("それ", 41, -5.9), row("ふと", 1, -1.5)];
+  const config = { proposal_z: -2, proposal_max_author_docs: 1, rate_z: -4, proposal_limit: 10 };
+  assert.deepEqual(proposeModelLeaning(rows, ["m"], config).map((entry) => entry.evidence.feature), ["すべて", "わかる"]);
+  const rates = proposeRateDifferences(rows, ["m"], { author: { chars: 1000 }, m: { chars: 1000 } }, config);
+  assert.deepEqual(rates.map((entry) => entry.feature), ["た+。", "それ"]);
+  assert.deepEqual(rates[0].per_1000_chars, { author: 180, m: 30 });
 });
 
 test("article measures follow sentence-length, max-ten and decoration-density", async () => {

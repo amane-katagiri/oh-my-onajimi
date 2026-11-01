@@ -205,20 +205,39 @@ export const renderCandidates = (rows, allRunners) => {
   return `${[header.join("\t"), ...lines].join("\n")}\n`;
 };
 
-export const proposeModelLeaning = (rows, runners, { proposal_z: zMax, proposal_limit: limit }) =>
+const evidenceOf = (row, runners) => ({
+  feature: row.feature,
+  z: Object.fromEntries(runners.map((runner) => [runner, Number(row.z[runner].toFixed(2))])),
+  author_count: row.author.count,
+  author_docs: row.author.docs,
+  control: Object.fromEntries(runners.map((runner) => [runner, { count: row.control[runner].count, docs: row.control[runner].docs }])),
+});
+
+const leansToEveryModel = (row, runners, zMax) => runners.every((runner) => row.modelLeaning[runner] && row.z[runner] <= zMax);
+
+export const proposeModelLeaning = (rows, runners, { proposal_z: zMax, proposal_max_author_docs: maxAuthorDocs, proposal_limit: limit }) =>
   rows
-    .filter((row) => runners.every((runner) => row.modelLeaning[runner] && row.z[runner] <= zMax))
+    .filter((row) => leansToEveryModel(row, runners, zMax) && row.author.docs <= maxAuthorDocs)
     .slice(0, limit)
     .map((row) => ({
       tokens: row.tokens,
       message: `「${topSurfaces(new Map(runners.flatMap((runner) => [...row.control[runner].surfaces]))).split("|")[0]}」は筆者の言い方ではない。`,
-      evidence: {
-        feature: row.feature,
-        z: Object.fromEntries(runners.map((runner) => [runner, Number(row.z[runner].toFixed(2))])),
-        author_count: row.author.count,
-        author_docs: row.author.docs,
-        control: Object.fromEntries(runners.map((runner) => [runner, { count: row.control[runner].count, docs: row.control[runner].docs }])),
+      evidence: evidenceOf(row, runners),
+    }));
+
+const per1000 = (count, chars) => Number(((count / chars) * 1000).toFixed(2));
+
+export const proposeRateDifferences = (rows, runners, sides, { rate_z: zMax, proposal_max_author_docs: maxAuthorDocs, proposal_limit: limit }) =>
+  rows
+    .filter((row) => leansToEveryModel(row, runners, zMax) && row.author.docs > maxAuthorDocs)
+    .slice(0, limit)
+    .map((row) => ({
+      feature: row.feature,
+      per_1000_chars: {
+        author: per1000(row.author.count, sides.author.chars),
+        ...Object.fromEntries(runners.map((runner) => [runner, per1000(row.control[runner].count, sides[runner].chars)])),
       },
+      evidence: evidenceOf(row, runners),
     }));
 
 const readControls = (root, author, runnerNames, posts) => {
@@ -282,9 +301,10 @@ export const runProfile = async ({ root, author, paired = false, outDir }) => {
     ...Object.fromEntries(runners.map((runner) => [runner, { docs: controls[runner].docCount, chars: controls[runner].chars }])),
   };
   const proposal = {
-    note: "onajimi profile の提案。人が見直して profile.yml に写す。evidence の z は負ほどモデル寄り。",
+    note: "onajimi profile の提案。人が見直して profile.yml に写す。evidence の z は負ほどモデル寄り。model_leaning は筆者がほぼ使わない語で lint の辞書候補、rate_differences は筆者も使うが頻度が違う語で、語ごとの lint には向かない。",
     sides,
     model_leaning: proposeModelLeaning(rows, runners, corpus.config.profile),
+    rate_differences: proposeRateDifferences(rows, runners, sides, corpus.config.profile),
     thresholds: Object.fromEntries(["sentence_length", "max_ten", "bold_per_1000", "list_ratio"].map((key) => [key, thresholds[key].proposed])),
   };
   fs.writeFileSync(path.join(target, "proposal.yml"), YAML.stringify(proposal));

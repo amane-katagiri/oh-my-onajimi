@@ -62,5 +62,7 @@ profile:
   alpha0: 1000
   min_docs: 2
   min_count: 3
-  proposal_z: -3
+  proposal_z: -2
+  proposal_max_author_docs: 1
+  rate_z: -4
   proposal_limit: 40

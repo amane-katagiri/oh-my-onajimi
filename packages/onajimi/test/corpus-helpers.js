@@ -33,7 +33,7 @@ export const makeCorpusRoot = (posts, { runners } = {}) => {
         down: { command: [process.execPath, fakeRunner, log, "flaky", "99"], output: "json", rate_limit: "429", unavailable: "503" },
       },
     },
-    profile: { alpha0: 100, min_docs: 1, min_count: 1, proposal_z: -0.5, proposal_limit: 10 },
+    profile: { alpha0: 100, min_docs: 1, min_count: 1, proposal_z: -0.5, proposal_max_author_docs: 1, rate_z: -0.5, proposal_limit: 10 },
   };
   fs.writeFileSync(path.join(dir, "corpus.yml"), YAML.stringify(config));
   return { root, log };
