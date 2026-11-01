@@ -1,8 +1,15 @@
 # textlint-rule-preset-onajimi
 
-筆者の書きぶりから作った辞書としきい値で、日本語の文章を検査する [textlint](https://textlint.org/) のプリセット。モデルが多用するのに筆者はほとんど使わない語、筆者なら別の言い方をする語、太字や箇条書きの多さ、言い回しの密度を指摘する。
+筆者の書きぶりから作った辞書としきい値で、日本語の文章を検査する [textlint](https://textlint.org/) のプリセットです。
 
-辞書としきい値は筆者ごとに違うので、プリセットには入っていない。ふつうは CLI の onajimi（npm の `onajimi`）が筆者の記事とモデルの対照から作る（`onajimi build` が `generated/` に辞書と `.textlintrc.json` を書く）。手で書いてもよい。
+次のようなものを指摘します。
+
+- モデルが多用するのに、筆者はほとんど使わない語
+- 筆者なら別の言い方をする語
+- 太字や箇条書きの多さ
+- 言い回しの密度
+
+辞書としきい値は筆者ごとに違うので、プリセットには入っていません。ふつうは CLI の onajimi（npm の `onajimi`）が、筆者の記事とモデルの対照から作ります（`onajimi build` が `generated/` に辞書と `.textlintrc.json` を書きます）。手で書いてもかまいません。
 
 ## インストール
 
@@ -10,11 +17,11 @@
 npm install --save-dev textlint textlint-rule-preset-onajimi
 ```
 
-Node 20 以降、textlint 15 以降。
+Node 20 以降、textlint 15 以降が必要です。
 
 ## 使い方
 
-`.textlintrc.json` の例:
+`.textlintrc.json` の例です。
 
 ```json
 {
@@ -34,24 +41,26 @@ Node 20 以降、textlint 15 以降。
 }
 ```
 
+検査は次のように実行します。
+
 ```sh
 npx textlint draft.md
 ```
 
 ## ルール
 
-既定では `decoration-density` だけが有効で、それもしきい値を書いた検査しか動かない。ほかの 3 つは設定を書いたときだけ動く。
+既定では `decoration-density` だけが有効です。それもしきい値を書いた検査しか動きません。ほかの 3 つは、設定を書いたときだけ動きます。
 
 ### model-leaning / author-leaning
 
-辞書の語・連語を、地の文（`Str` ノード）ごとに形態素で照合して指摘する。中身は同じで、重大度を分けるために 2 つの名前で登録している（モデル寄りの語は error、筆者の言い方を示すものは `"severity": "warning"` にする使い方を想定）。太字・インラインコード・改行・段落をまたぐ一致は拾わない。
+辞書の語・連語を、地の文（`Str` ノード）ごとに形態素で照合して指摘します。中身は同じで、重大度を分けるために 2 つの名前で登録しています。モデル寄りの語は error、筆者の言い方を示すものは `"severity": "warning"` にする使い方を想定しています。太字・インラインコード・改行・段落をまたぐ一致は拾いません。
 
 | オプション | 中身 |
 |---|---|
 | `dictionaryPath` | 辞書の JSON（必須）。`.textlintrc` のあるディレクトリからの相対 |
 | `allows` | 一致した範囲がこの文字列（`/正規表現/flags` も可）を含むとき、指摘しない |
 
-辞書の形式:
+辞書の形式です。
 
 ```json
 {
@@ -64,11 +73,11 @@ npx textlint draft.md
 }
 ```
 
-`tokens` は kuromoji のトークンの条件の並び（[morpheme-match](https://github.com/azu/morpheme-match) の形式）。`surface_form`・`basic_form`・`pos`・`pos_detail_1` などを書き、値を配列にするとどれかに一致すればよい。`message` は指摘の文。
+`tokens` は kuromoji のトークンの条件の並びです（[morpheme-match](https://github.com/azu/morpheme-match) の形式）。`surface_form`・`basic_form`・`pos`・`pos_detail_1` などを書きます。値を配列にすると、どれかに一致すれば対象になります。`message` は指摘の文です。
 
 ### decoration-density
 
-文書全体の装飾を数え、しきい値を超えたら文書に 1 件だけ出す（ラベル付きの箇条書きは項目ごと）。引用と表の中は数えない。書かなかったしきい値の検査は動かない。
+文書全体の装飾を数えて、しきい値を超えたら文書に 1 件だけ出します（ラベル付きの箇条書きは項目ごとに出します）。引用と表の中は数えません。書かなかったしきい値の検査は動きません。
 
 | オプション | 中身 |
 |---|---|
@@ -82,7 +91,7 @@ npx textlint draft.md
 
 ### phrase-density
 
-語・連語の地の文 1000 字あたりの出現数が上限を超えた文書に、項目ごとに 1 件出す。見出し・引用・表・コード・HTML は数えない。
+語・連語の地の文 1000 字あたりの出現数が上限を超えた文書に、項目ごとに 1 件出します。見出し・引用・表・コード・HTML は数えません。
 
 | オプション | 中身 |
 |---|---|
@@ -90,4 +99,4 @@ npx textlint draft.md
 
 ## ライセンス
 
-MIT。`rules/token-leaning.js` の一部は textlint-rule-preset-ai-words-ja（MIT）からの移植。[NOTICE](NOTICE) を参照。
+MIT です。`rules/token-leaning.js` の一部は textlint-rule-preset-ai-words-ja（MIT）から移植しています。[NOTICE](NOTICE) を参照してください。

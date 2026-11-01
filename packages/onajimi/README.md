@@ -1,6 +1,8 @@
 # onajimi
 
-筆者の記事とモデルに書かせた対照を比べて筆者のプロファイル（辞書としきい値）を作り、それに沿って下書きを textlint で検査する CLI。モデルが書いた日本語の記事を、特定の筆者の好みに少しだけ近づける仕上げに使う。ルールの実体は textlint-rule-preset-onajimi。
+筆者の記事から、その人の書き癖を辞書にして、下書きを検査する CLI です。
+
+筆者の記事と、モデルに書かせた対照の記事を比べて、筆者のプロファイル（辞書としきい値）を作ります。そのプロファイルに沿って、下書きを textlint で検査します。モデルが書いた日本語の記事を、特定の筆者の好みに少しだけ近づける仕上げに使います。ルールの実体は textlint-rule-preset-onajimi です。
 
 ## インストール
 
@@ -8,9 +10,11 @@
 npm install --global onajimi
 ```
 
-Node 22 以降。
+Node 22 以降が必要です。
 
 ## 使い方
+
+次の流れで、プロファイルを作って下書きを検査します。
 
 ```sh
 onajimi init --author alice --posts ~/blog/content/post   # corpus.yml のひな形と空の profile.yml を作る
@@ -19,6 +23,10 @@ onajimi build --author alice                              # profile.yml から g
 onajimi lint --author alice draft.md                      # 指摘を「行:列 ルール名 メッセージ」で 1 行ずつ出す。0 件なら何も出さない
 onajimi guard draft.md out.md                             # 直す前と後で数値と否定の数が変わっていれば 1 で終わる
 ```
+
+`lint` は、指摘を 1 行に 1 件ずつ出します。指摘がなければ何も出しません。`guard` は、直した稿で数値と否定が変わっていたら 1 で終わります。
+
+## コマンド
 
 | コマンド | 中身 |
 |---|---|
@@ -32,18 +40,18 @@ onajimi guard draft.md out.md                             # 直す前と後で�
 | `pipeline` | split から review までを通す |
 | `eval` | 筆者の記事での誤検出と、対照での検出を 1000 字あたりで出す |
 
-引数なしで実行すると、すべてのオプションを出す。プロファイルの作り方（対照の生成、候補の選び方、dev と test の使い分け）は、リポジトリ oh-my-onajimi の README.md と notes/plan.md にある。
+引数なしで実行すると、すべてのオプションが出ます。プロファイルの作り方（対照の生成、候補の選び方、dev と test の使い分け）は、リポジトリ oh-my-onajimi の README と docs/reference.md にあります。
 
 ## データの置き場所
 
-筆者のデータは `<root>/authors/<name>/` に置く。root は次の順に決まる。
+筆者のデータは `<root>/authors/<name>/` に置きます。root は次の順に決まります。
 
 1. `--root <dir>`
 2. 環境変数 `ONAJIMI_ROOT`
-3. `${XDG_DATA_HOME:-~/.local/share}/onajimi`（`XDG_DATA_HOME` が絶対パスでなければ `~/.local/share` を使う）
+3. `${XDG_DATA_HOME:-~/.local/share}/onajimi`（`XDG_DATA_HOME` が絶対パスでなければ `~/.local/share` を使います）
 
-`init` と `import` は筆者のディレクトリがなければ作る。ほかのコマンドは、筆者のディレクトリがなければエラーで止まる。
+`init` と `import` は、筆者のディレクトリがなければ作ります。ほかのコマンドは、筆者のディレクトリがなければエラーで止まります。
 
 ## ライセンス
 
-MIT。`src/guard.js` の一部は yomiyasu（MIT）からの移植。[NOTICE](NOTICE) を参照。
+MIT です。`src/guard.js` の一部は yomiyasu（MIT）から移植しています。[NOTICE](NOTICE) を参照してください。
