@@ -41,7 +41,7 @@ onajimi guard draft.md out.md                             # 直す前と後で�
 | `pipeline` | split から review までを通す |
 | `eval` | 筆者の記事での誤検出と、対照での検出を 1000 字あたりで出す |
 
-引数なしで実行すると、すべてのオプションが出ます。プロファイルの作り方（対照の生成、候補の選び方、dev と test の使い分け）は、リポジトリ oh-my-onajimi の README と docs/reference.md にあります。
+引数なしで実行すると、全てのオプションが出ます。プロファイルの作り方（対照の生成、候補の選び方、dev と test の使い分け）は、リポジトリ oh-my-onajimi の README と docs/reference.md にあります。
 
 ## データの置き場所
 
