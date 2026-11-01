@@ -15,6 +15,7 @@ import { NEEDS_YES, runPipeline } from "./pipeline.js";
 import { acceptIds } from "./accept.js";
 import { initAuthor } from "./init.js";
 import { importAuthor } from "./import-author.js";
+import { abcCommand } from "./abc.js";
 
 const usage = () => `使い方:
   onajimi build --author <name> [--check]
@@ -34,6 +35,9 @@ const usage = () => `使い方:
                                              生成するものがあるのに --yes がなければ、見積もりだけを出して 5 で終わる
   onajimi accept --author <name> <番号...>   review.md の番号（M3 O2 R1 D5 'D5=メッセージ' T T.<項目>[=値]）を profile.yml に足して build する
   onajimi eval --author <name> [--set test|dev|profile|holdout] [--details]   --details は dev と profile だけ
+  onajimi abc --author <name> [--runner <name>] [--set test] [--only a,b] [--limit n] [--delay 秒] [--dry-run] [--estimate] [--yes] [--report]
+                                             A（対照）・B（文体の指示と例）・C（A を lint の指摘で 1 回直す）を比べる。
+                                             呼び出すものがあるのに --yes がなければ、見積もりだけを出して 5 で終わる。--report は生成せずに指標を出す
 共通: --root <dir>（authors/ のあるディレクトリ。省略時は環境変数 ONAJIMI_ROOT、それもなければ ${dataRoot()}）`;
 
 const CREATES_AUTHOR = new Set(["init", "import"]);
@@ -67,6 +71,7 @@ const dispatch = async ({ argv, preset }) => {
       from: { type: "string" },
       force: { type: "boolean", default: false },
       root: { type: "string" },
+      report: { type: "boolean", default: false },
     },
   });
   const { root, source } = resolveRoot(values.root);
@@ -231,6 +236,24 @@ const dispatch = async ({ argv, preset }) => {
       }
     }
     return 0;
+  }
+  if (command === "abc" && positionals.length === 0) {
+    return abcCommand({
+      root,
+      author: needAuthor(),
+      preset,
+      runner: values.runner,
+      set: values.set ?? "test",
+      only: values.only?.split(",").filter(Boolean),
+      limit: values.limit === undefined ? undefined : Number(values.limit),
+      delaySeconds: values.delay === undefined ? undefined : Number(values.delay),
+      estimate: values.estimate,
+      yes: values.yes,
+      dryRun: values["dry-run"],
+      report: values.report,
+      say: (line) => console.log(line),
+      log: (line) => console.error(line),
+    });
   }
   if (command === "accept" && positionals.length > 0) {
     const result = acceptIds({ root: root, author: needAuthor(), ids: positionals });

@@ -150,13 +150,13 @@ const generateByGeminiApi = async (runner, prompt, { timeoutSeconds, fetchImpl =
 export const generateOne = (runner, prompt, options) =>
   runner.api === "gemini" ? generateByGeminiApi(runner, prompt, options) : generateByCommand(runner, prompt, options);
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const sha256 = (text) => crypto.createHash("sha256").update(text).digest("hex");
 
 export const controlFile = (root, author, runner, slug) => path.join(corpusPaths(root, author).control, runner, `${slug}.md`);
 
-const readMeta = (file) => {
+export const readMeta = (file) => {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch {
@@ -164,7 +164,7 @@ const readMeta = (file) => {
   }
 };
 
-const generateWithRetry = async (runner, prompt, { timeoutSeconds, retryDelaysSeconds, log }) => {
+export const generateWithRetry = async (runner, prompt, { timeoutSeconds, retryDelaysSeconds, log }) => {
   for (let attempt = 1; ; attempt += 1) {
     try {
       return { ...(await generateOne(runner, prompt, { timeoutSeconds })), attempts: attempt };
@@ -179,7 +179,7 @@ const generateWithRetry = async (runner, prompt, { timeoutSeconds, retryDelaysSe
   }
 };
 
-const pickPosts = (corpus, set, only) => {
+export const pickPosts = (corpus, set, only) => {
   if (set !== "all" && !SETS.includes(set)) {
     throw new Error(`--set は ${SETS.join("・")}・all のどれか`);
   }
@@ -276,7 +276,7 @@ export const estimateControl = ({ root, author, corpus, runner: name, set = "pro
   };
 };
 
-const minutes = (seconds) => (seconds < 90 ? `${Math.ceil(seconds)} 秒` : `${Math.ceil(seconds / 60)} 分`);
+export const minutes = (seconds) => (seconds < 90 ? `${Math.ceil(seconds)} 秒` : `${Math.ceil(seconds / 60)} 分`);
 
 export const renderEstimate = (estimate) => {
   const e = estimate;

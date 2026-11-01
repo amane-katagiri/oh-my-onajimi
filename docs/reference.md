@@ -24,9 +24,10 @@ authors/amane/                           例として置いている作者のプ
 <root>/authors/<name>/profile/           profile と review の出力
 <root>/authors/<name>/generated/         build の出力（手で編集しない）
 <root>/authors/<name>/corpus/            筆者の記事と、比較用に書かせた記事（_control/<runner>/）
+<root>/authors/<name>/experiments/abc/   onajimi abc の B・C の出力と report.md
 ```
 
-このリポジトリの `authors/` で git が追跡するのは、人が書く `profile.yml`・`corpus.yml`・`split.yml` だけです。`profile/`・`generated/`・`corpus/` は作り直せる出力か、リポジトリに入れたくないデータなので無視しています。
+このリポジトリの `authors/` で git が追跡するのは、人が書く `profile.yml`・`corpus.yml`・`split.yml` だけです。`profile/`・`generated/`・`corpus/`・`experiments/` は作り直せる出力か、リポジトリに入れたくないデータなので無視しています。
 
 ## データの置き場所（root）
 
@@ -84,6 +85,7 @@ bin/onajimi eval --author alice                       # 最後に 1 回だけ、
 | `pipeline --author <name> [...]` | split → control（全 runner）→ profile → build → review を通す |
 | `accept --author <name> <番号...>` | review.md の番号の候補を profile.yml に足し、build する |
 | `eval --author <name> [--set ...] [--details]` | 筆者の記事での誤検出と、比較用の記事での検出を 1000 字あたりで出す |
+| `abc --author <name> [--runner <name>] [--set test] [--only a,b] [--limit n] [--estimate] [--yes] [--report]` | A（比較用の記事）・B（文体の指示と筆者の例）・C（A に lint の指摘を 1 回だけ直させる）を作り、比べる |
 
 ### 終了コード
 
@@ -126,6 +128,19 @@ bin/onajimi eval --author alice                       # 最後に 1 回だけ、
   - `T.<項目>=値` で提案と違う値にします。
   - `T` だけなら、提案のしきい値をまとめて足します（検査が止まる値は除きます）。
   - 同じ候補やしきい値がもうあれば、何も書かずに 2 で終わります。
+
+### abc
+
+- A は `corpus/_control/<runner>/` にある比較用の記事をそのまま使う（呼び出さない）。runner は `--runner`、省略すると corpus.yml の最初の runner。
+- B は、control と同じ指示に「この筆者の文体で書いてください」と、プロファイル用のいちばん新しい 3 本の本文（地の文の段落だけ。frontmatter・見出し・引用・コード・表を外し、1 本 3000 字までで段落の切れ目で切る）を足して、記事ごとに 1 回呼び出す。
+- C は、A に lint をかけ、指摘がなければ A をそのまま写す（呼び出さない）。指摘があれば、onajimi スキルの手順 3 と 5（指摘された箇所だけを直す、「K 回減らす」は K 箇所だけ、指摘のない文は変えない、直すのは 1 回）を書いた指示と指摘（その行の抜粋つき）と下書きを渡して 1 回呼び出し、guard の結果を記録する。スキルと違い、guard に落ちても元に戻さず、そのまま残して印を付ける。指標では、落ちたものを A に戻した「C戻し」も出す。
+- 出力は `<root>/authors/<name>/experiments/abc/{B,C}/<slug>.md` と、同じ名前の `.json`（runner・モデル・プロンプトのハッシュ・所要時間・費用・C は指摘の数と guard の結果）。プロンプトのハッシュが同じものは飛ばすので、止まっても同じコマンドで再開できる。辞書を変えると C のプロンプトが変わり、作り直しになる。
+- 呼び出すものがあるのに `--yes` がなければ、見積もりを出して 5 で終わる。見積もりの時間と費用は、その条件の過去の出力の平均（なければ A の平均）から出す。`--dry-run` はプロンプトを出すだけ。
+- `--report` は生成せずに、B と C がそろった記事で指標を出し、`experiments/abc/report.md` にも書く。
+  - Burrows の Delta: 地の文を kuromoji で切り（空白・数・ASCII だけのトークンは外す）、基本形（なければ表層形）で数える。語彙は、プロファイル用の筆者の記事とその比較用の記事（全 runner）で多い順に N 語（50・150・300）、z の平均と標準偏差も同じ記事から文書単位で出す。同じ slug の筆者の記事との Delta と、プロファイル用の筆者の記事の重心との Delta を出す。辞書（表記の両方の形、密度と leaning のトークン）に当たる語を外した版も出す。
+  - 対の比較は、記事ごとの勝ち負け（Delta が小さいほうが勝ち）、差の平均とその 95% 区間（10000 回の bootstrap、乱数の種は固定）、両側の符号検定。
+  - そのほか、eval と同じ数え方の指摘の数（C には循環）、guard の通過率、A と C の文字単位の編集率（1 − 2·LCS/(|A|+|C|)）、指示した字数に対する字数の比、条件ごとの費用と時間。
+- test を辞書づくりのあいだに見たことがあれば、結果は C に有利な向きに偏る。
 
 ### eval
 

@@ -69,7 +69,29 @@ export const analyzeProse = (markdown, { skipParagraphs = [] } = {}) => {
   return { strs, headings, chars: strs.reduce((sum, text) => sum + countChars(text), 0) };
 };
 
-const HEADING_LINE = /^#{1,6}\s+(.*?)\s*#*\s*$/u;
+export const proseParagraphs = (markdown, { skipParagraphs = [] } = {}) => {
+  const testers = skipParagraphs.map(paragraphTester);
+  const paragraphs = [];
+  const walk = (node) => {
+    if (NOT_ANALYZED.has(node.type)) {
+      return;
+    }
+    if (node.type === "Paragraph") {
+      const text = nodeText(node).trim();
+      if (text !== "" && !testers.some((test) => test(text))) {
+        paragraphs.push(text);
+      }
+      return;
+    }
+    for (const child of node.children ?? []) {
+      walk(child);
+    }
+  };
+  walk(parseMarkdown(markdown));
+  return paragraphs;
+};
+
+const HEADING_LINE =/^#{1,6}\s+(.*?)\s*#*\s*$/u;
 const BOLD_ONLY_LINE = /^(\*\*|__)(?:(?!\1).)+\1$/u;
 
 const normalizeTitle = (text) => text.normalize("NFKC").replace(/[\s*_`#]/gu, "").toLowerCase();
