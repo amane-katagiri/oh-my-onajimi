@@ -87,7 +87,7 @@ claude plugin install onajimi@oh-my-onajimi
 bin/onajimi import --root ~/.claude/plugins/data/onajimi-oh-my-onajimi --from . --author amane
 ```
 
-ディレクトリ名の `onajimi-oh-my-onajimi` は、ドキュメントの命名規則から推測したものです。プラグインを入れたあと、`~/.claude/plugins/data/` の中を見て確かめてください。
+データディレクトリの名前は `<プラグイン名>-<マーケットプレイス名>` です。ディレクトリはスキルを初めて使ったときに作られますが、上の `import` で先に作っても構いません。
 
 あとは、Claude Code に記事を書いてもらうときに「onajimi で amane に寄せて仕上げて」のように頼みます。
 
