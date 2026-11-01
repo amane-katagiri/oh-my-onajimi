@@ -6,7 +6,7 @@ import { build } from "./build.js";
 const FILES = ["profile.yml", "corpus.yml", "split.yml"];
 const SKIPPED_IN_PROFILE = new Set(["_full"]);
 
-export const importAuthor = ({ root, from, author }) => {
+export const importAuthor = ({ root, from, author, force = false }) => {
   const source = authorDir(path.resolve(from), author);
   const target = authorDir(root, author);
   if (path.resolve(source) === path.resolve(target)) {
@@ -15,9 +15,9 @@ export const importAuthor = ({ root, from, author }) => {
   if (!fs.existsSync(path.join(source, "profile.yml"))) {
     throw new Error(`${path.join(source, "profile.yml")} がない。`);
   }
-  for (const name of [...FILES, "profile"]) {
+  for (const name of force ? [] : [...FILES, "profile"]) {
     if (fs.existsSync(path.join(target, name))) {
-      throw new Error(`${path.join(target, name)} はもうある。取り込み直すなら消してから実行する。`);
+      throw new Error(`${path.join(target, name)} はもうある。上書きするなら --force を付ける。`);
     }
   }
   fs.mkdirSync(target, { recursive: true });
@@ -29,6 +29,13 @@ export const importAuthor = ({ root, from, author }) => {
     }
   }
   if (fs.existsSync(path.join(source, "profile"))) {
+    if (fs.existsSync(path.join(target, "profile"))) {
+      for (const name of fs.readdirSync(path.join(target, "profile"))) {
+        if (!SKIPPED_IN_PROFILE.has(name)) {
+          fs.rmSync(path.join(target, "profile", name), { recursive: true });
+        }
+      }
+    }
     fs.cpSync(path.join(source, "profile"), path.join(target, "profile"), {
       recursive: true,
       filter: (file) => !SKIPPED_IN_PROFILE.has(path.relative(path.join(source, "profile"), file).split(path.sep)[0]),

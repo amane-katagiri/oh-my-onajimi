@@ -30,12 +30,12 @@ AI が書いた日本語の記事を、特定の筆者の書き癖に少しだ�
 
 ## まず lint を動かしてみる
 
-このリポジトリには、作者（amane）のプロファイルが入っています。それを使って、下書きに lint をかけてみます。Node 22 以降が必要です。
+このリポジトリには、作者（amane）のプロファイルが例として入っています。それを使って、下書きに lint をかけてみます。Node 22 以降が必要です。`--root .` は、このリポジトリを筆者のデータの置き場所として使う指定です（毎回付ける代わりに `ONAJIMI_ROOT=.` を設定しても構いません）。
 
 ```sh
 npm ci
-bin/onajimi build --author amane          # profile.yml から textlint の設定と辞書を作る
-bin/onajimi lint --author amane draft.md  # 下書きを検査する
+bin/onajimi build --root . --author amane          # profile.yml から textlint の設定と辞書を作る
+bin/onajimi lint --root . --author amane draft.md  # 下書きを検査する
 ```
 
 出力は 1 行に 1 件で、`行:列 ルール名 メッセージ` の形です。指摘がなければ何も出ません。
@@ -82,13 +82,13 @@ claude plugin marketplace add ./
 claude plugin install onajimi@oh-my-onajimi
 ```
 
-プラグインは、筆者のデータを Claude Code のプラグイン用データディレクトリ（`~/.claude/plugins/data/` の下）から読みます。このリポジトリにあるプロファイルを使うには、そこへ写します。
+筆者のデータは `~/.local/share/onajimi`（`XDG_DATA_HOME` を設定していれば `$XDG_DATA_HOME/onajimi`）に置きます。別の場所にしたいときは、`~/.bashrc` か Claude Code の settings.json の `env` で環境変数 `ONAJIMI_ROOT` を設定します。今どこを使っているかは `bin/onajimi root` で分かります。このリポジトリにあるプロファイルを使うには、そこへ写します。
 
 ```sh
-bin/onajimi import --root ~/.claude/plugins/data/onajimi-oh-my-onajimi --from . --author amane
+bin/onajimi import --from . --author amane
 ```
 
-データディレクトリの名前は `<プラグイン名>-<マーケットプレイス名>` です。ディレクトリはスキルを初めて使ったときに作られますが、上の `import` で先に作っても構いません。
+Claude Code のプラグイン用データディレクトリは使いません。そこはプラグインを外すと既定で消えますが、筆者のデータには、生成にお金と時間のかかる比較用の記事や、人が選んで作った辞書が入っているからです。ここに置いたデータは、プラグインを外しても残ります。
 
 あとは、Claude Code に記事を書いてもらうときに「onajimi で amane に寄せて仕上げて」のように頼みます。
 

@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 import { build } from "./build.js";
 import { lint } from "./lint.js";
 import { guard } from "./guard.js";
-import { authorDir, resolveRoot } from "./paths.js";
+import { authorDir, dataRoot, resolveRoot } from "./paths.js";
 import { SETS, loadCorpus, writeSplit } from "./corpus.js";
 import { analyzeProse } from "./prose.js";
 import { estimateControl, renderEstimate, runControl } from "./control.js";
@@ -16,12 +16,14 @@ import { acceptIds } from "./accept.js";
 import { initAuthor } from "./init.js";
 import { importAuthor } from "./import-author.js";
 
-const usage = (defaultRoot) => `使い方:
+const usage = () => `使い方:
   onajimi build --author <name> [--check]
   onajimi lint --author <name> <file>      ファイルをそのまま検査する（corpus.yml の exclude_sections などは当てない。コーパスの記事は eval --details で見る）
   onajimi guard <before> <after>
   onajimi init --author <name> [--posts <dir>]  corpus.yml のひな形と空の profile.yml を作る
-  onajimi import --author <name> --from <dir>  別の root から profile.yml などを取り込んで build する（corpus/ は取り込まない）
+  onajimi root                               使う root と、その決まり方を出す
+  onajimi import --author <name> --from <dir> [--force]  別の root から profile.yml などを取り込んで build する（corpus/ は取り込まない）。
+                                             --force はあるものを上書きする
   onajimi split --author <name>              コーパスを選んで split.yml に分ける。2 回目からは分けた記事を動かさず、新しい記事を holdout に足す
   onajimi corpus --author <name>             選んだ記事の本数と字数
   onajimi control --author <name> --runner <name> [--set profile|dev|test|holdout|all] [--only a,b] [--limit n] [--delay 秒] [--dry-run] [--estimate] [--yes]
@@ -32,11 +34,17 @@ const usage = (defaultRoot) => `使い方:
                                              生成するものがあるのに --yes がなければ、見積もりだけを出して 5 で終わる
   onajimi accept --author <name> <番号...>   review.md の番号（M3 O2 R1 D5 'D5=メッセージ' T T.<項目>[=値]）を profile.yml に足して build する
   onajimi eval --author <name> [--set test|dev|profile|holdout] [--details]   --details は dev と profile だけ
-共通: --root <dir>（authors/ のあるディレクトリ。省略時は環境変数 ONAJIMI_ROOT、それもなければ ${defaultRoot}）`;
+共通: --root <dir>（authors/ のあるディレクトリ。省略時は環境変数 ONAJIMI_ROOT、それもなければ ${dataRoot()}）`;
 
 const CREATES_AUTHOR = new Set(["init", "import"]);
 
-const dispatch = async ({ argv, preset, defaultRoot }) => {
+const ROOT_SOURCES = {
+  "--root": "--root で指定した",
+  ONAJIMI_ROOT: "環境変数 ONAJIMI_ROOT から",
+  default: "既定値（${XDG_DATA_HOME:-~/.local/share}/onajimi）",
+};
+
+const dispatch = async ({ argv, preset }) => {
   const [command, ...rest] = argv;
   const { values, positionals } = parseArgs({
     args: rest,
@@ -57,10 +65,11 @@ const dispatch = async ({ argv, preset, defaultRoot }) => {
       out: { type: "string" },
       posts: { type: "string" },
       from: { type: "string" },
+      force: { type: "boolean", default: false },
       root: { type: "string" },
     },
   });
-  const root = resolveRoot(values.root, process.env, defaultRoot);
+  const { root, source } = resolveRoot(values.root);
   const needAuthor = () => {
     if (!values.author) {
       throw new Error("--author が要る");
@@ -72,6 +81,11 @@ const dispatch = async ({ argv, preset, defaultRoot }) => {
     return values.author;
   };
 
+  if (command === "root" && positionals.length === 0) {
+    console.log(root);
+    console.log(ROOT_SOURCES[source]);
+    return 0;
+  }
   if (command === "build" && positionals.length === 0) {
     const result = build({ root: root, author: needAuthor(), check: values.check });
     if (values.check && result.stale.length > 0) {
@@ -182,7 +196,7 @@ const dispatch = async ({ argv, preset, defaultRoot }) => {
     if (!values.from) {
       throw new Error("--from が要る");
     }
-    const result = importAuthor({ root, from: values.from, author: needAuthor() });
+    const result = importAuthor({ root, from: values.from, author: needAuthor(), force: values.force });
     for (const file of result.copied) {
       console.log(`${file} に写した。`);
     }
@@ -223,7 +237,7 @@ const dispatch = async ({ argv, preset, defaultRoot }) => {
     console.log(`profile.yml に足して build した: ${result.accepted.join(" ")}`);
     return 0;
   }
-  console.error(usage(defaultRoot));
+  console.error(usage());
   return 2;
 };
 

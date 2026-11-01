@@ -16,12 +16,18 @@ export const makeRoot = () => {
 
 export const writeFile = (root, name, text) => {
   const file = path.join(root, name);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, text);
   return file;
 };
 
+export const isolatedHome = () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "onajimi-home-"));
+  return { HOME: home, XDG_DATA_HOME: path.join(home, "data"), ONAJIMI_ROOT: "" };
+};
+
 export const run = (args, { env, cwd, command = [bin] } = {}) => {
   const [file, ...head] = command;
-  const result = spawnSync(file, [...head, ...args], { encoding: "utf8", cwd, env: env === undefined ? process.env : { ...process.env, ...env } });
+  const result = spawnSync(file, [...head, ...args], { encoding: "utf8", cwd, env: { ...process.env, ...isolatedHome(), ...env } });
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 };

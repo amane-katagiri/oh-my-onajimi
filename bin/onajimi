@@ -1,11 +1,5 @@
 #!/usr/bin/env node
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import preset from "../packages/textlint-rule-preset-onajimi/index.js";
 import { main } from "../packages/onajimi/src/main.js";
 
-process.exitCode = await main({
-  argv: process.argv.slice(2),
-  preset,
-  defaultRoot: path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
-});
+process.exitCode = await main({ argv: process.argv.slice(2), preset });

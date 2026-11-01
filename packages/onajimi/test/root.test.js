@@ -3,51 +3,52 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { dataRoot, resolveRoot } from "../src/paths.js";
-import { makeRoot, repoRoot, run, writeFile } from "./helpers.js";
+import { isolatedHome, makeRoot, run, writeFile } from "./helpers.js";
 
-test("--root wins over ONAJIMI_ROOT, which wins over the entry point's default", () => {
-  assert.equal(resolveRoot("/a", { ONAJIMI_ROOT: "/b" }, "/c"), "/a");
-  assert.equal(resolveRoot(undefined, { ONAJIMI_ROOT: "/b" }, "/c"), "/b");
-  assert.equal(resolveRoot(undefined, { ONAJIMI_ROOT: "" }, "/c"), "/c");
-  assert.equal(resolveRoot(undefined, {}, "/c"), "/c");
+test("--root wins over ONAJIMI_ROOT, which wins over the data root", () => {
+  assert.deepEqual(resolveRoot("/a", { ONAJIMI_ROOT: "/b" }, "/h"), { root: "/a", source: "--root" });
+  assert.deepEqual(resolveRoot(undefined, { ONAJIMI_ROOT: "/b" }, "/h"), { root: "/b", source: "ONAJIMI_ROOT" });
+  assert.deepEqual(resolveRoot(undefined, { ONAJIMI_ROOT: "" }, "/h"), { root: "/h/.local/share/onajimi", source: "default" });
+  assert.deepEqual(resolveRoot(undefined, { XDG_DATA_HOME: "/x" }, "/h"), { root: "/x/onajimi", source: "default" });
 });
 
-test("the published default root follows XDG_DATA_HOME and ignores a relative one", () => {
+test("the data root follows XDG_DATA_HOME and ignores a relative one", () => {
   assert.equal(dataRoot({ XDG_DATA_HOME: "/x" }, "/h"), "/x/onajimi");
   assert.equal(dataRoot({}, "/h"), "/h/.local/share/onajimi");
   assert.equal(dataRoot({ XDG_DATA_HOME: "" }, "/h"), "/h/.local/share/onajimi");
   assert.equal(dataRoot({ XDG_DATA_HOME: "data" }, "/h"), "/h/.local/share/onajimi");
 });
 
-const runWithDefaultRoot = (defaultRoot, args) => {
-  const script = [
-    `import preset from ${JSON.stringify(pathToFileURL(path.join(repoRoot, "packages/textlint-rule-preset-onajimi/index.js")).href)};`,
-    `import { main } from ${JSON.stringify(pathToFileURL(path.join(repoRoot, "packages/onajimi/src/main.js")).href)};`,
-    `process.exitCode = await main({ argv: ${JSON.stringify(args)}, preset, defaultRoot: ${JSON.stringify(defaultRoot)} });`,
-  ].join("\n");
-  return run(["--input-type=module", "-e", script], { command: [process.execPath], env: { ONAJIMI_ROOT: "" } });
-};
-
-test("only init and import create the default root; other commands name the missing author directory", () => {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "onajimi-test-"));
-  const defaultRoot = path.join(base, "share/onajimi");
-  const draft = writeFile(base, "draft.md", "本文。\n");
-  const missing = runWithDefaultRoot(defaultRoot, ["lint", "--author", "fresh", draft]);
+test("the repository entry defaults to the data root and only init and import create it", () => {
+  const env = isolatedHome();
+  const defaultRoot = path.join(env.XDG_DATA_HOME, "onajimi");
+  const draft = writeFile(env.HOME, "draft.md", "本文。\n");
+  const missing = run(["lint", "--author", "fresh", draft], { env });
   assert.equal(missing.code, 2);
   assert.ok(missing.stderr.includes(`${path.join(defaultRoot, "authors/fresh")} がない。onajimi init --author fresh`), missing.stderr);
   assert.equal(fs.existsSync(defaultRoot), false);
-  const init = runWithDefaultRoot(defaultRoot, ["init", "--author", "fresh"]);
+  assert.ok(run([], { env }).stderr.includes(`それもなければ ${defaultRoot}）`));
+  const init = run(["init", "--author", "fresh"], { env });
   assert.equal(init.code, 0, init.stderr);
   assert.deepEqual(fs.readdirSync(path.join(defaultRoot, "authors/fresh")).sort(), ["corpus.yml", "profile.yml"]);
 });
 
-test("the repository entry defaults to the repository root", () => {
-  const result = run(["corpus", "--author", "nobody"], { env: { ONAJIMI_ROOT: "" } });
-  assert.equal(result.code, 2);
-  assert.ok(result.stderr.includes(path.join(repoRoot, "authors/nobody")), result.stderr);
-  assert.ok(run([]).stderr.includes(`それもなければ ${repoRoot}）`));
+test("without XDG_DATA_HOME the data root is under HOME", () => {
+  const env = { ...isolatedHome(), XDG_DATA_HOME: "" };
+  const result = run(["root"], { env });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout, `${path.join(env.HOME, ".local/share/onajimi")}\n既定値（\${XDG_DATA_HOME:-~/.local/share}/onajimi）\n`);
+});
+
+test("root prints the resolved root and where it came from", () => {
+  const env = isolatedHome();
+  const elsewhere = path.join(env.HOME, "elsewhere");
+  const fromEnv = run(["root"], { env: { ...env, ONAJIMI_ROOT: elsewhere } });
+  assert.equal(fromEnv.stdout, `${elsewhere}\n環境変数 ONAJIMI_ROOT から\n`);
+  const fromFlag = run(["root", "--root", "."], { env: { ...env, ONAJIMI_ROOT: elsewhere }, cwd: env.HOME });
+  assert.equal(fromFlag.stdout, `${env.HOME}\n--root で指定した\n`);
+  assert.equal(fs.existsSync(env.XDG_DATA_HOME), false);
 });
 
 test("init writes under ONAJIMI_ROOT when --root is absent", () => {
@@ -83,6 +84,27 @@ test("import copies the profile but not the corpus, then builds", () => {
   const again = run(["import", "--root", root, "--from", from, "--author", "demo"]);
   assert.equal(again.code, 2);
   assert.match(again.stderr, /はもうある/);
+});
+
+test("import --force overwrites the profile files but leaves corpus/ alone", () => {
+  const from = sourceRoot();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "onajimi-test-"));
+  assert.equal(run(["import", "--root", root, "--from", from, "--author", "demo"]).code, 0);
+  const dir = path.join(root, "authors/demo");
+  writeFile(dir, "corpus/mine.md", "自分の記事。\n");
+  writeFile(dir, "profile/stale.tsv", "x\n");
+  writeFile(dir, "profile/_full/kept.tsv", "x\n");
+  writeFile(dir, "split.yml", "profile: [old]\n");
+  writeFile(path.join(from, "authors/demo"), "corpus.yml", "select: { min_chars: 1 }\n");
+  writeFile(path.join(from, "authors/demo"), "profile/thresholds.yml", "changed: 1\n");
+  const result = run(["import", "--root", root, "--from", from, "--author", "demo", "--force"]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(fs.readFileSync(path.join(dir, "corpus.yml"), "utf8"), "select: { min_chars: 1 }\n");
+  assert.equal(fs.readFileSync(path.join(dir, "split.yml"), "utf8"), "profile: []\ndev: []\ntest: []\n");
+  assert.equal(fs.readFileSync(path.join(dir, "profile/thresholds.yml"), "utf8"), "changed: 1\n");
+  assert.deepEqual(fs.readdirSync(path.join(dir, "profile")).sort(), ["_full", "thresholds.yml"]);
+  assert.deepEqual(fs.readdirSync(path.join(dir, "profile/_full")), ["kept.tsv"]);
+  assert.deepEqual(fs.readdirSync(path.join(dir, "corpus")), ["mine.md"]);
 });
 
 test("the repository entry lints from any working directory", () => {

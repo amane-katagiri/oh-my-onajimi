@@ -12,15 +12,21 @@ packages/textlint-rule-preset-onajimi/  textlint のルール集
 packages/onajimi/                        CLI
 skills/onajimi/                          記事を筆者に寄せるスキル
 skills/onajimi-profile/                  プロファイルを作るスキル
-authors/<name>/profile.yml               辞書としきい値（人が書く）
-authors/<name>/corpus.yml                記事の選び方・除外・比較用の記事の生成方法・プロファイラの設定（人が書く）
-authors/<name>/split.yml                 記事の分け方（onajimi split が作り、そのあとは固定）
-authors/<name>/profile/                  profile と review の出力
-authors/<name>/generated/                build の出力（手で編集しない）
-authors/<name>/corpus/                   筆者の記事と、比較用に書かせた記事（_control/<runner>/）
+authors/amane/                           例として置いている作者のプロファイル（下の構成と同じ）
 ```
 
-git で追跡するのは、人が書く `profile.yml`・`corpus.yml`・`split.yml` だけです。`profile/`・`generated/`・`corpus/` は作り直せる出力か、リポジトリに入れたくないデータなので無視しています。
+筆者のデータは、root（次の節）の下に次の形で置きます。
+
+```
+<root>/authors/<name>/profile.yml        辞書としきい値（人が書く）
+<root>/authors/<name>/corpus.yml         記事の選び方・除外・比較用の記事の生成方法・プロファイラの設定（人が書く）
+<root>/authors/<name>/split.yml          記事の分け方（onajimi split が作り、そのあとは固定）
+<root>/authors/<name>/profile/           profile と review の出力
+<root>/authors/<name>/generated/         build の出力（手で編集しない）
+<root>/authors/<name>/corpus/            筆者の記事と、比較用に書かせた記事（_control/<runner>/）
+```
+
+このリポジトリの `authors/` で git が追跡するのは、人が書く `profile.yml`・`corpus.yml`・`split.yml` だけです。`profile/`・`generated/`・`corpus/` は作り直せる出力か、リポジトリに入れたくないデータなので無視しています。
 
 ## データの置き場所（root）
 
@@ -28,11 +34,20 @@ CLI は `<root>/authors/<name>/` を読み書きします。root は次の順に
 
 1. `--root <dir>`
 2. 環境変数 `ONAJIMI_ROOT`
-3. 入口ごとの既定値
-   - リポジトリの `bin/onajimi`：このリポジトリのルート
-   - npm で入れた `onajimi`：`${XDG_DATA_HOME:-~/.local/share}/onajimi`
+3. `${XDG_DATA_HOME:-~/.local/share}/onajimi`（`XDG_DATA_HOME` が絶対パスでなければ `~/.local/share` を使います）
 
-プラグインのスキルは、いつも `--root ${CLAUDE_PLUGIN_DATA}` を渡します。`init` と `import` 以外のコマンドは、筆者のディレクトリがないとエラーで止まります。
+リポジトリの `bin/onajimi`、npm で入れた `onajimi`、プラグインのスキルのどれも同じ順で決まります。スキルは `--root` を渡さないので、場所を変えるには `ONAJIMI_ROOT` を `~/.bashrc` か Claude Code の settings.json の `env` で設定します（Claude Code の Bash ツールはシェルの設定を読み込みます）。`onajimi root` は、使う root と、それがどれで決まったかを出します。
+
+Claude Code のプラグイン用データディレクトリ（`${CLAUDE_PLUGIN_DATA}`）は使いません。プラグインを外すと既定で消えますが、筆者のデータには生成にお金と時間のかかる比較用の記事と、人が選んで作った辞書が入っているからです。
+
+`init` と `import` 以外のコマンドは、筆者のディレクトリがないとエラーで止まります。
+
+このリポジトリの例のプロファイルと root のあいだでは、`import` で写します。
+
+```sh
+bin/onajimi import --from . --author amane                                          # リポジトリ → root
+bin/onajimi import --root . --from ~/.local/share/onajimi --author amane --force    # root → リポジトリ（書き戻し）
+```
 
 ## プロファイルを手で作る流れ
 
@@ -43,7 +58,7 @@ bin/onajimi init --author alice --posts ~/blog/content/post   # corpus.yml の�
 # corpus.yml の posts・select・control.runners を書く
 bin/onajimi pipeline --author alice --estimate   # 生成する本数・字数・時間・費用の目安だけを出す
 bin/onajimi pipeline --author alice --yes        # split → 比較用の記事の生成 → profile → build → review
-# authors/alice/profile/review.md を読み、採用する番号を決める
+# <root>/authors/alice/profile/review.md を読み、採用する番号を決める
 bin/onajimi accept --author alice O1 O2 'D5=「〜の中」を減らす。' T
 bin/onajimi eval --author alice --set dev --details   # 筆者の確認用の記事での誤検出を 1 件ずつ見る
 bin/onajimi eval --author alice                       # 最後に 1 回だけ、テスト用で評価する
@@ -55,8 +70,9 @@ bin/onajimi eval --author alice                       # 最後に 1 回だけ、
 
 | コマンド | 何をするか |
 |---|---|
+| `root` | 使う root と、それが `--root`・`ONAJIMI_ROOT`・既定値のどれで決まったかを出す |
 | `init --author <name> [--posts <dir>]` | corpus.yml のひな形と空の profile.yml を作る |
-| `import --author <name> --from <dir>` | 別の root から profile.yml・corpus.yml・split.yml・profile/ を写し、build する。corpus/ と profile/_full/ は写さない。写し先にもうあれば止まる |
+| `import --author <name> --from <dir> [--force]` | 別の root から profile.yml・corpus.yml・split.yml・profile/ を写し、build する。corpus/ と profile/_full/ は写さない。写し先にもうあれば止まる。`--force` を付けると上書きする（写し先の profile/ は _full/ を残して入れ替え、corpus/ には触らない） |
 | `build --author <name> [--check]` | profile.yml から generated/ を作る。`--check` は generated/ が古ければ 1 で終わる |
 | `lint --author <name> <file>` | ファイルをそのまま検査する |
 | `guard <before> <after>` | 数値と否定の数が変わっていないかを見る |
@@ -211,7 +227,7 @@ runner は次のどちらかで書きます。
 
 `packages/` の 2 つは npm に出せる形にしてありますが、まだ公開していません（`"private": true`）。
 
-- CLI の本体は `packages/onajimi/src/main.js` の `main({ argv, preset, defaultRoot })` です。npm の入口（`packages/onajimi/bin/onajimi.js`）はルール集をパッケージ名で読み込み、リポジトリの `bin/onajimi` は相対パスで読み込んで渡します。そのため、リポジトリの中では `packages/onajimi/bin/onajimi.js` を直接実行できません。
+- CLI の本体は `packages/onajimi/src/main.js` の `main({ argv, preset })` です。npm の入口（`packages/onajimi/bin/onajimi.js`）はルール集をパッケージ名で読み込み、リポジトリの `bin/onajimi` は相対パスで読み込んで渡します。root の決め方はどちらも同じです。そのため、リポジトリの中では `packages/onajimi/bin/onajimi.js` を直接実行できません。
 - ルートの package.json はプラグイン用の依存で、レジストリにある版を固定したものだけを書きます。CLI とルール集の依存を変えたら、ルートにも同じ版を足します（食い違うとテストが落ちます）。
 - 公開した状態を試すには、両方を `npm pack` し、同じディレクトリに 2 つの tgz を `npm install` します。
 - ルートの NOTICE は、2 つのパッケージの NOTICE をつないだものです（食い違うとテストが落ちます）。

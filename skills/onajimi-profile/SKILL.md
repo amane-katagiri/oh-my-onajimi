@@ -3,11 +3,11 @@ name: onajimi-profile
 description: 筆者のコーパスと対照からプロファイルの提案を作り、人と相談して profile.yml を決める
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/onajimi *)
 ---
-以下の `onajimi` は `${CLAUDE_PLUGIN_ROOT}/bin/onajimi`、どのコマンドにも `--root ${CLAUDE_PLUGIN_DATA} --author <name>` を付ける。筆者のデータは `${CLAUDE_PLUGIN_DATA}/authors/<name>/` にある。
+以下の `onajimi` は `${CLAUDE_PLUGIN_ROOT}/bin/onajimi`、`onajimi root` 以外のコマンドには `--author <name>` を付ける。筆者のデータは `onajimi root` が出す root（以下 `<root>`）の `authors/<name>/` にあり、場所を変えるには環境変数 ONAJIMI_ROOT を設定する。始める前に `<root>` を人に伝える。別の root にある筆者を使うなら `onajimi import` を人に勧める。
 
 0. corpus.yml がなければ、記事の置き場所・使う runner・API キーの渡し方（`key_file` か環境変数）を人に尋ね、`onajimi init --posts <記事のディレクトリ>` のあと corpus.yml を一緒に直す。キーそのものをチャットに貼ってもらわない。
 1. `onajimi pipeline --estimate` を実行し、runner ごとの生成数・時間・費用の見積もりを人に見せる。人が同意してから `onajimi pipeline --yes` を実行する。回数制限や混雑で止まったら、時間をおいて同じコマンドで再開する。
-2. `${CLAUDE_PLUGIN_DATA}/authors/<name>/profile/review.md` を最初から最後まで読む。ほかの出力は、確かめたいことがあるときだけ開く。
+2. `<root>/authors/<name>/profile/review.md` を最初から最後まで読む。ほかの出力は、確かめたいことがあるときだけ開く。
 3. 次の順で選び、review.md の番号つきの一覧にして人に見せる。
    - orthography を先に選ぶ。表記の組で拾える語は、語としては足さない。要確認（R）の組は例文で確かめる。
    - model_leaning（M）は、筆者が使うプロファイル用の記事が 1 本以下で、dev が 0 回の語だけ。そうでなく頻度の差だけなら density（D）にする。

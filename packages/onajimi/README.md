@@ -30,7 +30,8 @@ onajimi guard draft.md out.md                             # 直す前と後で�
 
 | コマンド | 中身 |
 |---|---|
-| `init` / `import` | 筆者のひな形を作る / 別の root から profile.yml などを取り込んで build する |
+| `root` | 使う root と、その決まり方を出す |
+| `init` / `import` | 筆者のひな形を作る / 別の root から profile.yml などを取り込んで build する（`--force` で上書き） |
 | `build [--check]` | profile.yml から辞書と `.textlintrc.json` を作る。`--check` は古ければ 1 で終わる |
 | `lint <file>` | 下書きを検査する |
 | `guard <before> <after>` | 直した稿で数値と否定が変わっていないかを見る |

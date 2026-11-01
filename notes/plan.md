@@ -37,7 +37,7 @@ oh-my-onajimi/                              # Claude Code プラグインのル�
 │   ├─ src/profile.js          # 対数オッズ比と文統計
 │   ├─ src/build.js            # profile.yml → 辞書としきい値の生成物
 │   └─ src/guard.js            # 数値・否定（v2 で助詞）
-├─ authors/<name>/             # 開発用の root。プラグインでは ${CLAUDE_PLUGIN_DATA}/authors/<name>/
+├─ authors/<name>/             # 例のプロファイル。筆者のデータは onajimi root が出す root の authors/<name>/
 │   ├─ profile.yml             # 人が編集する唯一の元データ
 │   └─ generated/              # build の出力（--check で元データとの差を検査する）
 │       ├─ model-leaning.json  # {entries: [{message, tokens}]}
