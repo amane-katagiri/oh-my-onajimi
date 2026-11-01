@@ -15,7 +15,7 @@ authors/<name>/split.yml                 プロファイル用・dev 用・テ�
 authors/<name>/profile/                  profile と review の出力（candidates.tsv・proposal.yml・thresholds.yml・review.md）
 authors/<name>/generated/                build の出力（手で編集しない）
 authors/<name>/corpus/                   筆者の記事と対照（_control/<runner>/）。gitignore
-skill/SKILL.md                           薄いスキル（書いた記事を筆者に寄せる）
+skill/onajimi/SKILL.md                   薄いスキル（書いた記事を筆者に寄せる）
 skill/onajimi-profile/SKILL.md           プロファイルを人と決めるためのスキル
 ```
 
