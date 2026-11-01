@@ -9,7 +9,7 @@ const fail = (where, problem) => {
   throw new Error(`corpus.yml の ${where}: ${problem}`);
 };
 
-const TOP_LEVEL_KEYS = new Set(["note", "posts", "select", "test_ratio", "dev_ratio", "exclude_sections", "skip_paragraphs", "control", "profile"]);
+const TOP_LEVEL_KEYS = new Set(["note", "posts", "select", "test_ratio", "dev_ratio", "holdout_after", "exclude_sections", "skip_paragraphs", "control", "profile"]);
 
 export const PROFILE_DEFAULTS = {
   alpha0: 1000,
@@ -47,6 +47,10 @@ export const parseCorpusConfig = (text) => {
   if (since !== "" && !/^\d{4}-\d{2}-\d{2}$/u.test(since)) {
     fail("select.since", "YYYY-MM-DD で書く");
   }
+  const holdoutAfter = config.holdout_after === undefined ? "" : String(config.holdout_after);
+  if (holdoutAfter !== "" && !/^\d{4}-\d{2}-\d{2}$/u.test(holdoutAfter)) {
+    fail("holdout_after", "YYYY-MM-DD で書く");
+  }
   const testRatio = config.test_ratio ?? 0.25;
   if (!(testRatio > 0 && testRatio < 1)) {
     fail("test_ratio", "0 より大きく 1 より小さい数で書く");
@@ -75,6 +79,9 @@ export const parseCorpusConfig = (text) => {
   for (const [name, runner] of Object.entries(runners)) {
     if (!/^[A-Za-z0-9_-]+$/u.test(name)) {
       fail(`control.runners.${name}`, "名前に使えない文字がある");
+    }
+    if (runner?.price !== undefined && !(typeof runner.price === "number" && runner.price >= 0)) {
+      fail(`control.runners.${name}.price`, "出力 100 万トークンあたりの USD を 0 以上の数で書く");
     }
     if (runner?.api !== undefined) {
       if (runner.api !== "gemini") {
@@ -106,6 +113,7 @@ export const parseCorpusConfig = (text) => {
     select: { author: select.author, categories: select.categories?.map(String), since },
     testRatio,
     devRatio,
+    holdoutAfter,
     excludeSections,
     skipParagraphs,
     control: {
@@ -183,14 +191,31 @@ export const otherRegisterPosts = (posts, config) =>
     ? []
     : posts.filter((post) => byAuthor(post, config.select) && !config.select.categories.includes(post.meta.category));
 
-export const SETS = ["profile", "dev", "test"];
+export const SETS = ["profile", "dev", "test", "holdout"];
+export const HIDDEN_SETS = ["test", "holdout"];
+
+const byDate = (a, b) => (a.meta.date ?? "").localeCompare(b.meta.date ?? "") || a.slug.localeCompare(b.slug);
 
 export const splitByDate = (posts, testRatio, devRatio = 0) => {
-  const ordered = [...posts].sort((a, b) => (a.meta.date ?? "").localeCompare(b.meta.date ?? "") || a.slug.localeCompare(b.slug));
+  const ordered = [...posts].sort(byDate);
   const testCut = ordered.length - Math.ceil(ordered.length * testRatio);
   const devCut = Math.max(0, testCut - Math.ceil(ordered.length * devRatio));
   const slugs = (from, to) => ordered.slice(from, to).map((post) => post.slug);
   return { profile: slugs(0, devCut), dev: slugs(devCut, testCut), test: slugs(testCut) };
+};
+
+export const planSplit = (posts, config, existing = null) => {
+  if (existing) {
+    const assigned = new Set(SETS.flatMap((set) => existing[set] ?? []));
+    const added = posts.filter((post) => !assigned.has(post.slug)).sort(byDate).map((post) => post.slug);
+    const split = Object.fromEntries(SETS.map((set) => [set, [...(existing[set] ?? [])]]));
+    split.holdout.push(...added);
+    return { split, added, changed: added.length > 0 };
+  }
+  const late = (post) => config.holdoutAfter !== "" && postDate(post) > config.holdoutAfter;
+  const split = splitByDate(posts.filter((post) => !late(post)), config.testRatio, config.devRatio);
+  const holdout = posts.filter(late).sort(byDate).map((post) => post.slug);
+  return { split: { ...split, holdout }, added: holdout, changed: true };
 };
 
 export const corpusPaths = (root, author) => {
@@ -227,24 +252,39 @@ export const loadPosts = (root, author, config = loadCorpusConfig(root, author))
     .map((name) => parsePost(name.slice(0, -3), fs.readFileSync(path.join(dir, name), "utf8")));
 };
 
-export const writeSplit = ({ root, author }) => {
-  const config = loadCorpusConfig(root, author);
-  const target = corpusPaths(root, author).split;
-  if (fs.existsSync(target)) {
-    throw new Error(`${path.relative(process.cwd(), target)} はもうある。分け直すなら消してから実行する。`);
+const readSplit = (file) => {
+  if (!fs.existsSync(file)) {
+    return null;
   }
-  const split = splitByDate(selectPosts(loadPosts(root, author, config), config), config.testRatio, config.devRatio);
-  fs.writeFileSync(target, YAML.stringify(split));
+  const split = YAML.parse(fs.readFileSync(file, "utf8")) ?? {};
+  const missing = SETS.filter((set) => !Array.isArray(split[set]) && split[set] !== null);
+  if (missing.length > 0) {
+    throw new Error(`split.yml に ${missing.join(", ")} がない`);
+  }
   return split;
 };
 
-export const loadCorpus = (root, author) => {
+export const computeSplit = ({ root, author }) => {
+  const config = loadCorpusConfig(root, author);
+  return planSplit(selectPosts(loadPosts(root, author, config), config), config, readSplit(corpusPaths(root, author).split));
+};
+
+export const saveSplit = ({ root, author }, planned) => {
+  if (planned.changed) {
+    fs.writeFileSync(corpusPaths(root, author).split, YAML.stringify(planned.split));
+  }
+  return planned;
+};
+
+export const writeSplit = ({ root, author }) => saveSplit({ root, author }, computeSplit({ root, author }));
+
+export const loadCorpus = (root, author, { split: given } = {}) => {
   const config = loadCorpusConfig(root, author);
   const splitPath = corpusPaths(root, author).split;
-  if (!fs.existsSync(splitPath)) {
+  const split = given ?? readSplit(splitPath);
+  if (!split) {
     throw new Error(`${path.relative(process.cwd(), splitPath)} がない。先に onajimi split --author ${author} を実行する。`);
   }
-  const split = YAML.parse(fs.readFileSync(splitPath, "utf8")) ?? {};
   const posts = loadPosts(root, author, config);
   const bySlug = new Map(posts.map((post) => [post.slug, post]));
   const pick = (slugs) =>
@@ -255,14 +295,10 @@ export const loadCorpus = (root, author) => {
       }
       return applyExclusions(post, config.excludeSections);
     });
-  const missing = SETS.filter((set) => !Array.isArray(split[set] ?? null) && split[set] !== null);
-  if (missing.length > 0) {
-    throw new Error(`split.yml に ${missing.join(", ")} がない。onajimi split で作り直す`);
-  }
   const listOf = (set) => split[set] ?? [];
   const selected = new Set(SETS.flatMap(listOf));
   const other = otherRegisterPosts(posts, config)
     .filter((post) => !selected.has(post.slug))
     .map((post) => applyExclusions(post, config.excludeSections));
-  return { config, profile: pick(listOf("profile")), dev: pick(listOf("dev")), test: pick(listOf("test")), other };
+  return { config, ...Object.fromEntries(SETS.map((set) => [set, pick(listOf(set))])), other };
 };

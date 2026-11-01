@@ -21,10 +21,10 @@ export const isContentWord = (token) =>
 
 export const docFeatures = (strTokens) => {
   const features = new Map();
-  const add = (key, kind, tokens, surface, text, start, end, following) => {
+  const add = (key, kind, content, tokens, surface, text, start, end, following) => {
     let entry = features.get(key);
     if (!entry) {
-      entry = { kind, tokens, count: 0, surfaces: new Map(), next: new Map(), example: snippet(text, start, end) };
+      entry = { kind, content, tokens, count: 0, surfaces: new Map(), next: new Map(), example: snippet(text, start, end) };
       features.set(key, entry);
     }
     entry.count += 1;
@@ -37,12 +37,13 @@ export const docFeatures = (strTokens) => {
       const end = start + token.surface_form.length;
       const next = tokens[index + 1];
       if (isContentWord(token)) {
-        add(`${base(token)}/${token.pos}`, "unigram", [{ pos: token.pos, ...condition(token) }], token.surface_form, text, start, end, next);
+        add(`${base(token)}/${token.pos}`, "unigram", true, [{ pos: token.pos, ...condition(token) }], token.surface_form, text, start, end, next);
       }
       if (next && !isBreak(token) && !isBreak(next) && !(isAscii(token) && isAscii(next))) {
         add(
           `${base(token)}+${base(next)}`,
           "bigram",
+          isContentWord(token) || isContentWord(next),
           [condition(token), condition(next)],
           `${token.surface_form}${next.surface_form}`,
           text,
@@ -72,7 +73,7 @@ export const aggregate = (docs) => {
     for (const [key, entry] of features) {
       let total = counts.get(key);
       if (!total) {
-        total = { kind: entry.kind, tokens: entry.tokens, count: 0, docs: 0, surfaces: new Map(), next: new Map(), examples: [] };
+        total = { kind: entry.kind, content: entry.content, tokens: entry.tokens, count: 0, docs: 0, surfaces: new Map(), next: new Map(), examples: [] };
         counts.set(key, total);
       }
       total.count += entry.count;
@@ -109,7 +110,7 @@ export const compare = (author, controls, { alpha0, min_docs: minDocs, min_count
     const a = author.counts.get(key) ?? EMPTY;
     const sample = author.counts.get(key) ?? Object.values(controls).map((c) => c.counts.get(key)).find(Boolean);
     const kind = sample.kind;
-    const row = { feature: key, kind, tokens: sample.tokens, author: a, z: {}, control: {}, modelLeaning: {}, authorLeaning: false };
+    const row = { feature: key, kind, content: sample.content, tokens: sample.tokens, author: a, z: {}, control: {}, modelLeaning: {}, authorLeaning: false };
     for (const runner of runners) {
       const c = controls[runner].counts.get(key) ?? EMPTY;
       if (a.count + c.count === 0) {
@@ -173,7 +174,7 @@ export const annotate = (rows, { prompts = [], other = null, controlChars = 0 })
     row.controlSurfaces = controls.reduce((into, c) => mergeCounts(into, c.surfaces), new Map());
     row.controlNext = controls.reduce((into, c) => mergeCounts(into, c.next), new Map());
     const surfaces = topList(row.controlSurfaces.size > 0 ? row.controlSurfaces : row.author.surfaces);
-    row.inBriefDocs = prompts.filter((prompt) => surfaces.some((surface) => containsWord(prompt, surface))).length;
+    row.inBriefDocs = row.content === false ? null : prompts.filter((prompt) => surfaces.some((surface) => containsWord(prompt, surface))).length;
     row.authorOtherPer1000 = other ? per1000(other.counts.get(row.feature)?.count ?? 0, other.chars) : null;
     row.controlPer1000 = per1000(
       controls.reduce((sum, c) => sum + c.count, 0),
@@ -212,7 +213,7 @@ export const renderCandidates = (rows, allRunners) => {
       row.author.docs,
       ...allRunners.flatMap((runner) => (row.control[runner] ? [row.control[runner].count, row.control[runner].docs] : ["", ""])),
       topList(surfaces).join("|"),
-      row.inBriefDocs,
+      row.inBriefDocs ?? "-",
       fixed(row.authorOtherPer1000),
       formatCounts(row.author.next),
       formatCounts(row.controlNext),
@@ -233,7 +234,7 @@ const evidenceOf = (row, runners) => ({
   author_count: row.author.count,
   author_docs: row.author.docs,
   control: Object.fromEntries(runners.map((runner) => [runner, { count: row.control[runner].count, docs: row.control[runner].docs }])),
-  in_brief_docs: row.inBriefDocs ?? 0,
+  ...(row.inBriefDocs === null ? {} : { in_brief_docs: row.inBriefDocs ?? 0 }),
   ...(row.authorOtherPer1000 === null || row.authorOtherPer1000 === undefined
     ? {}
     : { author_other_per_1000: row.authorOtherPer1000, control_per_1000: row.controlPer1000 }),
@@ -311,7 +312,13 @@ export const proposeDensity = (rates, authorDocs, controlDocs, { min_chars: minC
         min_chars: minChars,
         typical_per_1000: round1(percentile(authorRates, 0.5)),
         message: `「${rate.feature.replace(/\/.*$/u, "").replaceAll("+", "")}」が多い。`,
-        evidence: { feature: rate.feature, author_articles: authorRates.length, author_max: round1(Math.max(...authorRates)), control, in_brief_docs: rate.evidence.in_brief_docs },
+        evidence: {
+          feature: rate.feature,
+          author_articles: authorRates.length,
+          author_max: round1(Math.max(...authorRates)),
+          control,
+          ...(rate.evidence.in_brief_docs === undefined ? {} : { in_brief_docs: rate.evidence.in_brief_docs }),
+        },
         fireShare,
       };
     })
@@ -434,14 +441,16 @@ export const runProfile = async ({ root, author, paired = false, outDir }) => {
       entry.evidence.orthography_pair = pair.join("/");
     }
   }
+  const numbered = (prefix, entries) => entries.map((entry, index) => ({ id: `${prefix}${index + 1}`, ...entry }));
   const proposal = {
-    note: "onajimi profile の提案。人が見直して profile.yml に写す。evidence の z は負ほどモデル寄り。model_leaning は筆者がほぼ使わない語で lint の辞書候補、excluded_in_brief は対照の指示に語が入っていたので外した候補、rate_differences は筆者も使うが頻度が違う語、density はそれを文書単位の密度で見るときの案、orthography_review は読みが同じでも別の語かもしれない組。",
+    note: "onajimi profile の提案。人が見直して profile.yml に写す。evidence の z は負ほどモデル寄り。id は onajimi accept に渡す番号。model_leaning は筆者がほぼ使わない語で lint の辞書候補、excluded_in_brief は対照の指示に語が入っていたので外した候補（内容語を含む特徴だけを指示と照らす）、rate_differences は筆者も使うが頻度が違う語、density はそれを文書単位の密度で見るときの案、orthography_review は読みが同じでも別の語かもしれない組。",
     sides,
-    ...leaning,
-    orthography: orthography.orthography,
-    orthography_review: orthography.orthography_review,
+    model_leaning: numbered("M", leaning.model_leaning),
+    excluded_in_brief: leaning.excluded_in_brief,
+    orthography: numbered("O", orthography.orthography),
+    orthography_review: numbered("R", orthography.orthography_review),
     rate_differences: rateDifferences,
-    density: proposeDensity(rateDifferences, authorDocs, controlDocs, params),
+    density: numbered("D", proposeDensity(rateDifferences, authorDocs, controlDocs, params)),
     author_leaning_hints: proposeAuthorHints(rows, runners, params),
     thresholds: {
       ...Object.fromEntries(THRESHOLD_KEYS.map((key) => [key, thresholds[key].proposed])),

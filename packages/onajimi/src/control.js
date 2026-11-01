@@ -179,45 +179,131 @@ const generateWithRetry = async (runner, prompt, { timeoutSeconds, retryDelaysSe
   }
 };
 
-export const runControl = async ({ root, author, runner: name, set = "profile", only, limit, delaySeconds, dryRun = false, log = () => {} }) => {
-  const corpus = loadCorpus(root, author);
-  const runner = corpus.config.control.runners[name];
-  if (!runner) {
-    throw new Error(`corpus.yml の control.runners に ${name} がない`);
-  }
+const pickPosts = (corpus, set, only) => {
   if (set !== "all" && !SETS.includes(set)) {
     throw new Error(`--set は ${SETS.join("・")}・all のどれか`);
   }
   const pool = set === "all" ? SETS.flatMap((name) => corpus[name]) : corpus[set];
-  let posts = pool;
-  if (only) {
-    const bySlug = new Map(pool.map((post) => [post.slug, post]));
-    posts = only.map((slug) => {
-      const post = bySlug.get(slug);
-      if (!post) {
-        throw new Error(`${slug} は ${set} にない`);
-      }
-      return post;
-    });
+  if (!only) {
+    return pool;
   }
+  const bySlug = new Map(pool.map((post) => [post.slug, post]));
+  return only.map((slug) => {
+    const post = bySlug.get(slug);
+    if (!post) {
+      throw new Error(`${slug} は ${set} にない`);
+    }
+    return post;
+  });
+};
+
+const runnerOf = (corpus, name) => {
+  const runner = corpus.config.control.runners[name];
+  if (!runner) {
+    throw new Error(`corpus.yml の control.runners に ${name} がない`);
+  }
+  return runner;
+};
+
+export const planControl = ({ root, author, corpus, runner: name, set = "profile", only }) => {
+  runnerOf(corpus, name);
+  const outDir = path.join(corpusPaths(root, author).control, name);
+  return pickPosts(corpus, set, only).map((post) => {
+    const brief = buildBrief(post, { skipParagraphs: corpus.config.skipParagraphs });
+    const prompt = renderPrompt(corpus.config.control.prompt, brief);
+    const target = path.join(outDir, `${post.slug}.md`);
+    const metaFile = path.join(outDir, `${post.slug}.json`);
+    const status = !fs.existsSync(target) ? "new" : readMeta(metaFile)?.prompt_sha256 === sha256(prompt) ? "cached" : "stale";
+    return { post, prompt, chars: brief.chars, target, metaFile, status };
+  });
+};
+
+const outputTokensOf = (meta) => {
+  const usage = meta.usage ?? {};
+  if (typeof usage.output_tokens === "number") {
+    return usage.output_tokens;
+  }
+  if (typeof usage.candidatesTokenCount === "number") {
+    return usage.candidatesTokenCount + (usage.thoughtsTokenCount ?? 0);
+  }
+  return null;
+};
+
+// 過去の出力がない runner の目安。日本語の本文は 1 字あたり 1〜2 トークンで、思考の分を足して多めに見る。
+const DEFAULT_TOKENS_PER_CHAR = 2.5;
+
+const history = (plan) => {
+  const durations = [];
+  let tokens = 0;
+  let chars = 0;
+  for (const item of plan.filter((entry) => entry.status !== "new")) {
+    const meta = readMeta(item.metaFile);
+    if (typeof meta?.duration_ms === "number") {
+      durations.push(meta.duration_ms);
+    }
+    const used = meta ? outputTokensOf(meta) : null;
+    if (used !== null) {
+      tokens += used;
+      chars += item.chars;
+    }
+  }
+  return {
+    secondsPerOutput: durations.length === 0 ? null : durations.reduce((sum, ms) => sum + ms, 0) / durations.length / 1000,
+    tokensPerChar: chars === 0 ? null : tokens / chars,
+  };
+};
+
+export const estimateControl = ({ root, author, corpus, runner: name, set = "profile", only, delaySeconds }) => {
+  const runner = runnerOf(corpus, name);
+  const plan = planControl({ root, author, corpus, runner: name, set, only });
+  const todo = plan.filter((item) => item.status !== "cached");
+  const chars = todo.reduce((sum, item) => sum + item.chars, 0);
+  const past = history(plan);
+  const delay = delaySeconds ?? corpus.config.control.delaySeconds;
+  const tokensPerChar = past.tokensPerChar ?? DEFAULT_TOKENS_PER_CHAR;
+  const tokens = Math.round(chars * tokensPerChar);
+  return {
+    runner: name,
+    generate: todo.length,
+    fresh: todo.filter((item) => item.status === "new").length,
+    stale: todo.filter((item) => item.status === "stale").length,
+    cached: plan.length - todo.length,
+    chars,
+    seconds: past.secondsPerOutput === null ? null : todo.length * past.secondsPerOutput + Math.max(0, todo.length - 1) * delay,
+    tokens,
+    tokensFromHistory: past.tokensPerChar !== null,
+    costUsd: runner.price === undefined ? null : (tokens / 1e6) * runner.price,
+  };
+};
+
+const minutes = (seconds) => (seconds < 90 ? `${Math.ceil(seconds)} 秒` : `${Math.ceil(seconds / 60)} 分`);
+
+export const renderEstimate = (estimate) => {
+  const e = estimate;
+  const time = e.generate === 0 ? "" : e.seconds === null ? "、時間は不明（過去の出力がない）" : `、約 ${minutes(e.seconds)}`;
+  const tokens = e.generate === 0 ? "" : `、出力 約 ${e.tokens} トークン（${e.tokensFromHistory ? "過去の出力から" : "仮の換算"}）`;
+  const cost = e.generate === 0 ? "" : e.costUsd === null ? "、費用は price がないので出さない" : `、約 $${e.costUsd.toFixed(2)}`;
+  return `${e.runner}: 生成 ${e.generate} 本（新規 ${e.fresh}・作り直し ${e.stale}）、既存 ${e.cached} 本、目標 ${e.chars} 字${time}${tokens}${cost}`;
+};
+
+export const runControl = async ({ root, author, corpus = loadCorpus(root, author), runner: name, set = "profile", only, limit, delaySeconds, dryRun = false, log = () => {} }) => {
+  const runner = runnerOf(corpus, name);
+  const plan = planControl({ root, author, corpus, runner: name, set, only });
   const { timeoutSeconds, retryDelaysSeconds } = corpus.config.control;
   const delay = (delaySeconds ?? corpus.config.control.delaySeconds) * 1000;
   const outDir = path.join(corpusPaths(root, author).control, name);
   const summary = { generated: [], skipped: [], stale: [], failed: [], rateLimited: null, unavailable: null };
   let first = true;
-  for (const post of posts) {
-    const target = path.join(outDir, `${post.slug}.md`);
-    const metaFile = path.join(outDir, `${post.slug}.json`);
-    const prompt = renderPrompt(corpus.config.control.prompt, buildBrief(post, { skipParagraphs: corpus.config.skipParagraphs }));
+  for (const { post, prompt, target, metaFile, status } of plan) {
     if (dryRun) {
       log(`--- ${post.slug}\n${prompt}`);
       continue;
     }
-    if (fs.existsSync(target)) {
-      if (readMeta(metaFile)?.prompt_sha256 === sha256(prompt)) {
-        summary.skipped.push(post.slug);
-        continue;
-      }
+    if (status === "cached") {
+      summary.skipped.push(post.slug);
+      continue;
+    }
+    if (status === "stale") {
       summary.stale.push(post.slug);
       log(`${name} ${post.slug} はプロンプトが変わったので作り直す`);
     }

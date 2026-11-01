@@ -87,3 +87,4 @@ test:
   - ai-profile-direnv
   - slop-skill-audit
   - you-can-use-static
+holdout: []

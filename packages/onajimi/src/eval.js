@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { SETS, corpusPaths, loadCorpus } from "./corpus.js";
+import { HIDDEN_SETS, SETS, corpusPaths, loadCorpus } from "./corpus.js";
 import { createAuthorLinter } from "./lint.js";
 import { analyzeProse, parseMarkdown, stripTitle } from "./prose.js";
 
@@ -70,20 +70,53 @@ export const controlDocsOf = (root, author, runner, posts) => {
     .map(({ post, file }) => ({ slug: post.slug, text: stripTitle(fs.readFileSync(file, "utf8"), post.meta) }));
 };
 
-export const runEval = async ({ root, author, set = "test" }) => {
-  const corpus = loadCorpus(root, author);
-  const options = { skipParagraphs: corpus.config.skipParagraphs };
-  const lintText = await createAuthorLinter(root, author);
+export const runEval = async ({ root, author, set = "test", details = false }) => {
   if (!SETS.includes(set)) {
     throw new Error(`--set は ${SETS.join("・")} のどれか`);
   }
-  const posts = corpus[set];
-  const rows = [{ label: `誤検出: 筆者 ${set}`, ...(await scoreDocs(lintText, authorDocsOf(posts), options)) }];
-  for (const runner of Object.keys(corpus.config.control.runners)) {
-    rows.push({ label: `検出: ${runner} ${set}`, ...(await scoreDocs(lintText, controlDocsOf(root, author, runner, posts), options)) });
+  if (details && HIDDEN_SETS.includes(set)) {
+    throw new Error(`--details は ${HIDDEN_SETS.join("・")} には使えない。最終評価までは件数の表だけを見る。`);
   }
-  return rows;
+  const corpus = loadCorpus(root, author);
+  const options = { skipParagraphs: corpus.config.skipParagraphs };
+  const lintText = await createAuthorLinter(root, author);
+  const authorDocs = authorDocsOf(corpus[set]);
+  const rows = [{ label: `誤検出: 筆者 ${set}`, ...(await scoreDocs(lintText, authorDocs, options)) }];
+  for (const runner of Object.keys(corpus.config.control.runners)) {
+    rows.push({ label: `検出: ${runner} ${set}`, ...(await scoreDocs(lintText, controlDocsOf(root, author, runner, corpus[set]), options)) });
+  }
+  if (!details) {
+    return { rows };
+  }
+  const findings = [];
+  for (const doc of authorDocs) {
+    findings.push(...(await lintDoc(lintText, doc)).findings);
+  }
+  return { rows, findings };
 };
+
+const LINE_TEXT_MAX = 60;
+const LEAD = 20;
+
+export const truncate = (text, max) => {
+  const chars = [...String(text ?? "")];
+  return chars.length > max ? `${chars.slice(0, max).join("")}…` : chars.join("");
+};
+
+export const around = (text, column = 1) => {
+  const chars = [...text];
+  if (chars.length <= LINE_TEXT_MAX) {
+    return text;
+  }
+  const from = Math.max(0, Math.min(column - 1 - LEAD, chars.length - LINE_TEXT_MAX + 1));
+  const head = from > 0 ? "…" : "";
+  const rest = chars.slice(from);
+  const room = LINE_TEXT_MAX - head.length;
+  return `${head}${rest.length > room ? `${rest.slice(0, room - 1).join("")}…` : rest.join("")}`;
+};
+
+export const renderFinding = (finding, { messageMax, separator = " ｜ " } = {}) =>
+  `${finding.slug}:${finding.line} ${finding.rule} ${messageMax ? truncate(finding.message, messageMax) : finding.message}${separator}${around(finding.text, finding.column)}`;
 
 export const renderEval = (rows) => {
   const header = "| 対象 | 記事数 | 字数 | 指摘 | 1000字あたり | 内訳 | 引用・表で除外 |";

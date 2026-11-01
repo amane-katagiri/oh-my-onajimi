@@ -24,3 +24,13 @@ test("eval prints false positives on test posts and detections on test-set contr
   assert.equal(lines[3], "| 検出: fake test | 1 | 14 | 2 | 142.86 | model-leaning 2 | 0 |");
   assert.equal(lines[4], "| 検出: limited test | 0 | 0 | 0 | 対照なし | - | 0 |");
 });
+
+test("finding lines keep at most 60 characters of the line around the column", async () => {
+  const { around } = await import("../src/eval.js");
+  const line = `${"あ".repeat(50)}対象${"い".repeat(50)}`;
+  const shown = around(line, 51);
+  assert.ok([...shown].length <= 60);
+  assert.match(shown, /^…あ+対象い+…$/u);
+  assert.equal(around("短い行", 1), "短い行");
+  assert.ok([...around("う".repeat(80), 1)].length <= 60);
+});

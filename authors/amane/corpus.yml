@@ -9,6 +9,7 @@ select:
 
 test_ratio: 0.25
 dev_ratio: 0.11
+holdout_after: 2026-10-27
 
 exclude_sections:
   - post: my-2025

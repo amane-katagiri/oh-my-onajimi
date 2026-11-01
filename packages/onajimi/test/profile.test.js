@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
-import { aggregate, compare, containsWord, docFeatures, docRates, featuresOfMarkdown, isContentWord, logOddsZ, proposeDensity, proposeModelLeaning, proposeRateDifferences, snippet } from "../src/profile.js";
+import { aggregate, annotate, compare, containsWord, docFeatures, docRates, featuresOfMarkdown, isContentWord, logOddsZ, proposeDensity, proposeModelLeaning, proposeRateDifferences, snippet } from "../src/profile.js";
 import { aggregateVariants, docVariants, isScriptVariant, prhEntry, proposeOrthography } from "../src/orthography.js";
 import { measureArticle, proposeThresholds } from "../src/stats.js";
 import { run } from "./helpers.js";
@@ -266,4 +266,26 @@ test("brief matching ignores a surface that is only part of a longer kanji or ka
   assert.equal(containsWord("新しい方式を試みた。", "試み"), true);
   assert.equal(containsWord("ログを見る", "ログ"), true);
   assert.equal(containsWord("この本は", "本"), true);
+});
+
+test("only features with a content word are checked against the brief; function-word features show - and stay proposable", async () => {
+  const { features } = await featuresOfMarkdown("設定を、確認した。\n");
+  assert.equal(features.get("を+、").content, false);
+  assert.equal(features.get("確認+する").content, true);
+  assert.equal(features.get("確認/名詞").content, true);
+  const totals = aggregate([{ id: "a", features: (await featuresOfMarkdown("今日は晴れていて、散歩に出かけて、公園を歩いた。\n")).features }]);
+  const control = aggregate([
+    { id: "c1", features },
+    { id: "c2", features },
+  ]);
+  const rows = compare(totals, { m: control }, { alpha0: 100, min_docs: 1, min_count: 1 });
+  annotate(rows, { prompts: ["設定を、確認したことを書く。"] });
+  const row = (feature) => rows.find((candidate) => candidate.feature === feature);
+  assert.equal(row("を+、").inBriefDocs, null);
+  assert.equal(row("確認+する").inBriefDocs, 1);
+  const leaning = proposeModelLeaning(rows, ["m"], { proposal_z: 0, proposal_max_author_docs: 1, proposal_limit: 50 });
+  const wo = leaning.model_leaning.find((entry) => entry.evidence.feature === "を+、");
+  assert.ok(wo);
+  assert.equal("in_brief_docs" in wo.evidence, false);
+  assert.ok(leaning.excluded_in_brief.some((entry) => entry.evidence.feature === "確認+する"));
 });

@@ -21,7 +21,7 @@ const calls = (log) => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").split(
 
 test("control caches outputs with meta and skips them on the next run", () => {
   const { root, log } = prepare();
-  const first = run(["control", "--root", root, "--author", "demo", "--runner", "fake"]);
+  const first = run(["control", "--root", root, "--author", "demo", "--runner", "fake", "--yes"]);
   assert.equal(first.code, 0, first.stderr);
   assert.equal(first.stdout, "生成 3（うち作り直し 0）、既存 0、失敗 0\n");
   assert.equal(calls(log), 3);
@@ -32,16 +32,16 @@ test("control caches outputs with meta and skips them on the next run", () => {
   assert.equal(meta.unwrapped, true);
   assert.equal(meta.total_cost_usd, 0.01);
   assert.equal(typeof meta.duration_ms, "number");
-  const second = run(["control", "--root", root, "--author", "demo", "--runner", "fake"]);
+  const second = run(["control", "--root", root, "--author", "demo", "--runner", "fake", "--yes"]);
   assert.equal(second.stdout, "生成 0（うち作り直し 0）、既存 3、失敗 0\n");
   assert.equal(calls(log), 3);
-  const test = run(["control", "--root", root, "--author", "demo", "--runner", "fake", "--set", "test"]);
+  const test = run(["control", "--root", root, "--author", "demo", "--runner", "fake", "--set", "test", "--yes"]);
   assert.equal(test.stdout, "生成 1（うち作り直し 0）、既存 0、失敗 0\n");
 });
 
 test("control stops cleanly on a rate limit and resumes later", () => {
   const { root, log } = prepare();
-  const result = run(["control", "--root", root, "--author", "demo", "--runner", "limited"]);
+  const result = run(["control", "--root", root, "--author", "demo", "--runner", "limited", "--yes"]);
   assert.equal(result.code, 3);
   assert.match(result.stdout, /p1 で回数制限に当たって止めた/);
   assert.equal(calls(log), 2);
@@ -102,23 +102,23 @@ test("the gemini runner turns 429 into a rate limit without leaking the key", as
 
 test("control regenerates outputs whose prompt hash no longer matches", () => {
   const { root, log } = prepare();
-  run(["control", "--root", root, "--author", "demo", "--runner", "fake"]);
+  run(["control", "--root", root, "--author", "demo", "--runner", "fake", "--yes"]);
   const config = path.join(root, "authors/demo/corpus.yml");
   const parsed = YAML.parse(fs.readFileSync(config, "utf8"));
   parsed.control.prompt = `本文は約{chars}字です。\n${parsed.control.prompt}`;
   fs.writeFileSync(config, YAML.stringify(parsed));
   fs.rmSync(path.join(root, "authors/demo/corpus/_control/fake/p1.json"));
-  const result = run(["control", "--root", root, "--author", "demo", "--runner", "fake"]);
+  const result = run(["control", "--root", root, "--author", "demo", "--runner", "fake", "--yes"]);
   assert.equal(result.stdout, "生成 3（うち作り直し 3）、既存 0、失敗 0\n");
   assert.equal(calls(log), 6);
   const meta = JSON.parse(fs.readFileSync(path.join(root, "authors/demo/corpus/_control/fake/p0.json"), "utf8"));
   assert.equal(meta.prompt_sha256, sha256("本文は約100字です。\n約100字で書いてください。\nタイトル: 題0\n# 見出し0\n要点: 要点。"));
-  assert.equal(run(["control", "--root", root, "--author", "demo", "--runner", "fake"]).stdout, "生成 0（うち作り直し 0）、既存 3、失敗 0\n");
+  assert.equal(run(["control", "--root", root, "--author", "demo", "--runner", "fake", "--yes"]).stdout, "生成 0（うち作り直し 0）、既存 3、失敗 0\n");
 });
 
 test("control retries an unavailable runner with backoff and stops cleanly when it stays down", () => {
   const flaky = prepare();
-  const ok = run(["control", "--root", flaky.root, "--author", "demo", "--runner", "flaky", "--limit", "1"]);
+  const ok = run(["control", "--root", flaky.root, "--author", "demo", "--runner", "flaky", "--limit", "1", "--yes"]);
   assert.equal(ok.code, 0, ok.stderr);
   assert.equal(calls(flaky.log), 3);
   assert.match(ok.stderr, /0 秒待って再試行する（3 回目）/u);
@@ -126,7 +126,7 @@ test("control retries an unavailable runner with backoff and stops cleanly when 
   assert.equal(meta.attempts, 3);
 
   const down = prepare();
-  const stopped = run(["control", "--root", down.root, "--author", "demo", "--runner", "down"]);
+  const stopped = run(["control", "--root", down.root, "--author", "demo", "--runner", "down", "--yes"]);
   assert.equal(stopped.code, 4);
   assert.match(stopped.stdout, /p0 で混雑が続いたので止めた/u);
   assert.equal(calls(down.log), 4);
@@ -137,4 +137,19 @@ test("the gemini runner treats 503 as unavailable", async () => {
   const { root } = prepare();
   const fetchImpl = async () => new Response(JSON.stringify({ error: { status: "UNAVAILABLE", message: "high demand" } }), { status: 503 });
   await assert.rejects(generateOne(geminiRunner(root), "書いて", { timeoutSeconds: 5, fetchImpl }), UnavailableError);
+});
+
+test("control without --yes prints the estimate and exits 5 when something would be generated", () => {
+  const { root, log } = prepare();
+  const gated = run(["control", "--root", root, "--author", "demo", "--runner", "fake"]);
+  assert.equal(gated.code, 5, gated.stderr);
+  assert.match(gated.stdout, /^fake: 生成 3 本（新規 3・作り直し 0）、既存 0 本、目標 300 字/u);
+  assert.match(gated.stdout, /--yes を付けて/u);
+  assert.equal(calls(log), 0);
+  assert.equal(fs.existsSync(path.join(root, "authors/demo/corpus/_control/fake")), false);
+  assert.equal(run(["control", "--root", root, "--author", "demo", "--runner", "fake", "--yes"]).code, 0);
+  const cached = run(["control", "--root", root, "--author", "demo", "--runner", "fake"]);
+  assert.equal(cached.code, 0, cached.stderr);
+  assert.match(cached.stdout, /生成 0（うち作り直し 0）、既存 3、失敗 0/u);
+  assert.equal(calls(log), 3);
 });

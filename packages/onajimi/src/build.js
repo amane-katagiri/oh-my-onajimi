@@ -19,8 +19,8 @@ const THRESHOLDS = {
   emphasis_min_marks: [NON_NEGATIVE, "0 以上の数"],
   density_min_chars: [NON_NEGATIVE, "0 以上の数"],
 };
-const THRESHOLD_KEYS = new Set(Object.keys(THRESHOLDS));
-const PRH_KEYS = new Set(["expected", "pattern", "patterns", "regexpMustEmpty", "specs", "options", "prh"]);
+export const THRESHOLD_KEYS = new Set(Object.keys(THRESHOLDS));
+const PRH_KEYS = new Set(["expected", "pattern", "patterns", "regexpMustEmpty", "specs", "options", "prh", "note", "evidence"]);
 
 const fail = (where, problem) => {
   throw new Error(`profile.yml の ${where}: ${problem}`);
@@ -91,7 +91,8 @@ export const parseProfile = (text) => {
     if (entry.pattern === undefined && entry.patterns === undefined) {
       fail(where, "pattern か patterns が要る");
     }
-    return entry;
+    const { note, evidence, ...rule } = entry;
+    return rule;
   });
 
   const thresholds = profile.thresholds ?? {};

@@ -214,6 +214,17 @@ description: 日本語の記事を書き終えたあと、指定した筆者の�
 - そのため、この 22 本は「一度見た test」として扱う。A/B/C 比較には使うが、結果には注記を付ける（C に少し有利な向き）。
 - 2026-10-28 以降に公開する tech/ugoki の記事は test2 として取っておく。辞書の調整にも dev の確認にも使わない。数本たまったら、test2 で A/B/C を回し直す。
 - test と test2 は、lint の結果も含めて最後の評価まで見ない。
+- test2 は corpus.yml の `holdout_after: 2026-10-27` と split.yml の `holdout` にした（下の節）。
+
+## スキルだけで辞書を作らせてみた（2026-11-01）
+- 別のエージェントに skills/onajimi-profile だけを渡して辞書を作らせた。表記としきい値は人が作ったものと同じになり、語（model_leaning・density）はまったく食い違った。報告された問題と手当て:
+  - 費用の確認がない: `pipeline` と `control` は生成するものがあれば見積もりを出して 5 で止まり、`--yes` でだけ生成する。`--estimate` で見積もりだけを出せる。
+  - 新しい記事の置き場所がない: `holdout_after` と split.yml の `holdout`。split は分けた記事を動かさず、新しい記事を holdout に足す。amane の profile/dev/test は前と同じ。
+  - 提案を写す手間と写し間違い: review.md の番号（M・O・R・D・T）と `onajimi accept`。
+  - dev の指摘の場所が分からず、生の記事に lint をかけてゲストの節の指摘を拾った: `eval --set dev --details` が eval と同じ除外で行ごとに出す。test と holdout には使えない。lint はファイルをそのまま見ると README に書いた。
+  - 「指示」の列が を+、 などの機能語にも数字を出し、外す理由になっていた: 内容語を含む特徴だけで数える。
+  - dev での使用が review.md から分からなかった: model_leaning と density の行に dev の回数を出す。
+- コーパスの混入（筆者でない段落）を見つける簡単な決まりは見つからなかった。二人称（あなた）は amane の記事で 40 段落以上あり、筆者の書き方そのものだった。署名つきの見出し（by 〜）は my-2025 しかなく、もう除外している。そのため、混入はスキルの手順（dev の指摘が筆者の文でなさそうなら exclude_sections に足すよう人に伝える）に任せた。
 
 ## 決まったこと
 - 最初の筆者コーパス: ama.ne.jp のブログ記事（Markdown 原稿）

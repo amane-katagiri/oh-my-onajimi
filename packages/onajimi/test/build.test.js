@@ -109,3 +109,13 @@ test("density entries and the new thresholds reach the generated config, and phr
   assert.throws(() => parseProfile("density:\n  - tokens: [{ basic_form: a }]\n    message: x\n"), /density\[0\]: max_per_1000 が要る/u);
   assert.throws(() => parseProfile("thresholds:\n  emphasis_share_min: 2\n"), /thresholds\.emphasis_share_min: 0 以上 1 以下/u);
 });
+
+test("evidence and note are allowed on orthography entries and left out of the generated rules", () => {
+  const root = makeRoot();
+  const profile = path.join(root, "authors/demo/profile.yml");
+  fs.writeFileSync(profile, "orthography:\n  - expected: できる\n    pattern: 出来る\n    note: 人のメモ\n    evidence:\n      z: { opus: 3 }\n");
+  const result = run(["build", "--root", root, "--author", "demo"]);
+  assert.equal(result.code, 0, result.stderr);
+  const generated = fs.readFileSync(path.join(root, "authors/demo/generated/orthography.yml"), "utf8");
+  assert.equal(generated, "version: 1\nrules:\n  - expected: できる\n    pattern: 出来る\n");
+});

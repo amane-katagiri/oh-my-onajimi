@@ -100,10 +100,12 @@ test("split writes split.yml once and corpus reports the sets", () => {
   const { root } = makeCorpusRoot(posts);
   const first = run(["split", "--root", root, "--author", "demo"]);
   assert.equal(first.code, 0, first.stderr);
-  assert.equal(first.stdout, "profile 3 本、dev 0 本、test 1 本\n");
+  assert.equal(first.stdout, "profile 3 本、dev 0 本、test 1 本、holdout 0 本\nsplit.yml を書いた。\n");
   const split = YAML.parse(fs.readFileSync(path.join(root, "authors/demo/split.yml"), "utf8"));
-  assert.deepEqual(split, { profile: ["p0", "p1", "p2"], dev: [], test: ["p3"] });
-  assert.equal(run(["split", "--root", root, "--author", "demo"]).code, 2);
+  assert.deepEqual(split, { profile: ["p0", "p1", "p2"], dev: [], test: ["p3"], holdout: [] });
+  const again = run(["split", "--root", root, "--author", "demo"]);
+  assert.equal(again.code, 0, again.stderr);
+  assert.match(again.stdout, /変更なし/u);
   assert.match(run(["corpus", "--root", root, "--author", "demo"]).stdout, /^profile\t3 本\t15 字\t2021-01-01〜2021-01-03\ndev\t0 本\t0 字\ntest\t1 本\t5 字/u);
 });
 
@@ -113,13 +115,54 @@ test("split with a dev ratio writes three sets and eval --set dev reads the dev 
     posts[`p${i}`] = post({ title: `t${i}`, date: `2021-01-0${i + 1}`, body: "本文です。" });
   }
   const { root } = makeCorpusRoot(posts, { devRatio: 0.25 });
-  assert.equal(run(["split", "--root", root, "--author", "demo"]).stdout, "profile 4 本、dev 2 本、test 2 本\n");
+  assert.match(run(["split", "--root", root, "--author", "demo"]).stdout, /^profile 4 本、dev 2 本、test 2 本、holdout 0 本\n/u);
   const split = YAML.parse(fs.readFileSync(path.join(root, "authors/demo/split.yml"), "utf8"));
-  assert.deepEqual(split, { profile: ["p0", "p1", "p2", "p3"], dev: ["p4", "p5"], test: ["p6", "p7"] });
+  assert.deepEqual(split, { profile: ["p0", "p1", "p2", "p3"], dev: ["p4", "p5"], test: ["p6", "p7"], holdout: [] });
   run(["build", "--root", root, "--author", "demo"]);
   const dev = run(["eval", "--root", root, "--author", "demo", "--set", "dev"]);
   assert.equal(dev.code, 0, dev.stderr);
   assert.match(dev.stdout, /\| 誤検出: 筆者 dev \| 2 \|/u);
   assert.match(run(["eval", "--root", root, "--author", "demo"]).stdout, /誤検出: 筆者 test/u);
   assert.equal(run(["eval", "--root", root, "--author", "demo", "--set", "nope"]).code, 2);
+});
+
+test("holdout_after sends later posts to holdout, and a second split never moves assigned posts", () => {
+  const posts = {};
+  for (let i = 0; i < 8; i += 1) {
+    posts[`p${i}`] = post({ title: `t${i}`, date: `2021-01-0${i + 1}`, body: "本文です。" });
+  }
+  const { root } = makeCorpusRoot(posts, { devRatio: 0.25 });
+  const configFile = path.join(root, "authors/demo/corpus.yml");
+  const config = YAML.parse(fs.readFileSync(configFile, "utf8"));
+  fs.writeFileSync(configFile, YAML.stringify({ ...config, holdout_after: "2021-01-06" }));
+  run(["split", "--root", root, "--author", "demo"]);
+  const splitFile = path.join(root, "authors/demo/split.yml");
+  const first = YAML.parse(fs.readFileSync(splitFile, "utf8"));
+  assert.deepEqual(first, { profile: ["p0", "p1"], dev: ["p2", "p3"], test: ["p4", "p5"], holdout: ["p6", "p7"] });
+  fs.writeFileSync(path.join(root, "authors/demo/corpus/post/new.md"), post({ title: "n", date: "2020-06-01", body: "本文です。" }));
+  fs.writeFileSync(configFile, YAML.stringify({ ...config, holdout_after: "2020-01-01", test_ratio: 0.5 }));
+  const second = run(["split", "--root", root, "--author", "demo"]);
+  assert.equal(second.code, 0, second.stderr);
+  assert.match(second.stdout, /holdout に入れた記事: new/u);
+  assert.deepEqual(YAML.parse(fs.readFileSync(splitFile, "utf8")), { ...first, holdout: ["p6", "p7", "new"] });
+  assert.match(run(["corpus", "--root", root, "--author", "demo"]).stdout, /holdout\t3 本/u);
+  run(["build", "--root", root, "--author", "demo"]);
+  assert.match(run(["eval", "--root", root, "--author", "demo", "--set", "holdout"]).stdout, /誤検出: 筆者 holdout \| 3 \|/u);
+});
+
+test("a split.yml without one of the sets is an error for corpus and split alike", () => {
+  const posts = {};
+  for (let i = 0; i < 4; i += 1) {
+    posts[`p${i}`] = post({ title: `t${i}`, date: `2021-01-0${i + 1}`, body: "本文です。" });
+  }
+  const { root } = makeCorpusRoot(posts);
+  const splitFile = path.join(root, "authors/demo/split.yml");
+  const old = YAML.stringify({ profile: ["p0", "p1", "p2"], dev: [], test: ["p3"] });
+  fs.writeFileSync(splitFile, old);
+  for (const command of ["corpus", "split"]) {
+    const result = run([command, "--root", root, "--author", "demo"]);
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /split\.yml に holdout がない/u);
+  }
+  assert.equal(fs.readFileSync(splitFile, "utf8"), old);
 });
