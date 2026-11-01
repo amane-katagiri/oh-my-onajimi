@@ -9,10 +9,12 @@ import { around, documentKeyOf, scoreDocs } from "./eval.js";
 import { guard } from "./guard.js";
 import { createAuthorLinter, formatMessages } from "./lint.js";
 import { authorDir } from "./paths.js";
+import { docRates, featuresOfMarkdown } from "./profile.js";
 import { NEEDS_YES } from "./pipeline.js";
 import { analyzeProse, proseParagraphs, stripTitle } from "./prose.js";
 
-export const CONDITIONS = ["B", "C"];
+export const CONDITIONS = ["B", "C", "BC"];
+const REVISED = { C: "A", BC: "B" };
 export const EXAMPLE_COUNT = 3;
 export const EXAMPLE_MAX_CHARS = 3000;
 export const DELTA_SIZES = [50, 150, 300];
@@ -91,6 +93,17 @@ const runnerOf = (corpus, name) => {
 const statusOf = (target, metaFile, prompt) =>
   !fs.existsSync(target) ? "new" : readMeta(metaFile)?.prompt_sha256 === sha256(prompt) ? "cached" : "stale";
 
+const reviseItem = async ({ post, condition, draft, target, metaFile, lintText }) => {
+  const findings = await lintFindings(lintText, draft);
+  const item = { post, condition, draft, findings, target, metaFile };
+  if (findings.length === 0) {
+    const meta = readMeta(metaFile);
+    return { ...item, prompt: null, status: fs.existsSync(target) && meta?.called === false && meta.draft_sha256 === sha256(draft) ? "cached" : "copy" };
+  }
+  const prompt = revisePrompt(draft, findings);
+  return { ...item, prompt, status: statusOf(target, metaFile, prompt) };
+};
+
 export const planAbc = async ({ root, author, corpus, runner: name, set = "test", only, exampleCategory, lintText }) => {
   const { name: runner } = runnerOf(corpus, name);
   const posts = pickPosts(corpus, set, only);
@@ -113,17 +126,11 @@ export const planAbc = async ({ root, author, corpus, runner: name, set = "test"
     const basePrompt = renderPrompt(corpus.config.control.prompt, buildBrief(post, options(corpus)));
     const file = (condition, ext) => path.join(dir, condition, `${post.slug}.${ext}`);
     const bPrompt = stylePrompt(basePrompt, examples);
-    items.push({ post, condition: "B", prompt: bPrompt, target: file("B", "md"), metaFile: file("B", "json"), status: statusOf(file("B", "md"), file("B", "json"), bPrompt) });
-    const draft = fs.readFileSync(controlFile(root, author, runner, post.slug), "utf8");
-    const findings = await lintFindings(lintText, draft);
-    const c = { post, condition: "C", draft, findings, target: file("C", "md"), metaFile: file("C", "json") };
-    if (findings.length === 0) {
-      const meta = readMeta(c.metaFile);
-      items.push({ ...c, prompt: null, status: fs.existsSync(c.target) && meta?.called === false && meta.draft_sha256 === sha256(draft) ? "cached" : "copy" });
-    } else {
-      const prompt = revisePrompt(draft, findings);
-      items.push({ ...c, prompt, status: statusOf(c.target, c.metaFile, prompt) });
-    }
+    const b = { post, condition: "B", prompt: bPrompt, target: file("B", "md"), metaFile: file("B", "json"), status: statusOf(file("B", "md"), file("B", "json"), bPrompt) };
+    items.push(b);
+    const revise = async (condition, draft) => reviseItem({ post, condition, draft, target: file(condition, "md"), metaFile: file(condition, "json"), lintText });
+    items.push(await revise("C", fs.readFileSync(controlFile(root, author, runner, post.slug), "utf8")));
+    items.push(b.status === "cached" ? await revise("BC", fs.readFileSync(b.target, "utf8")) : { post, condition: "BC", prompt: null, status: "pending", target: file("BC", "md"), metaFile: file("BC", "json") });
   }
   return { runner, examples, items };
 };
@@ -138,7 +145,13 @@ export const estimateAbc = ({ root, author, plan, delaySeconds }) => {
     const items = plan.items.filter((item) => item.condition === condition);
     const todo = items.filter((item) => item.status === "new" || item.status === "stale");
     const own = callMetas(items);
-    const source = own.length > 0 ? { metas: own, label: `${condition} の過去 ${own.length} 本の平均から` } : { metas: aMetas, label: `A の ${aMetas.length} 本の平均から` };
+    const revised = condition === "BC" ? callMetas(plan.items.filter((item) => item.condition === "C")) : [];
+    const source =
+      own.length > 0
+        ? { metas: own, label: `${condition} の過去 ${own.length} 本の平均から` }
+        : revised.length > 0
+          ? { metas: revised, label: `C の ${revised.length} 本の平均から` }
+          : { metas: aMetas, label: `A の ${aMetas.length} 本の平均から` };
     const seconds = mean(source.metas.map((meta) => meta.duration_ms).filter((ms) => typeof ms === "number"));
     const cost = mean(source.metas.map((meta) => meta.total_cost_usd).filter((usd) => typeof usd === "number"));
     return {
@@ -147,6 +160,7 @@ export const estimateAbc = ({ root, author, plan, delaySeconds }) => {
       fresh: todo.filter((item) => item.status === "new").length,
       stale: todo.filter((item) => item.status === "stale").length,
       copy: items.filter((item) => item.status === "copy").length,
+      pending: items.filter((item) => item.status === "pending").length,
       cached: items.filter((item) => item.status === "cached").length,
       seconds: seconds === null ? null : (todo.length * seconds) / 1000 + Math.max(0, todo.length - 1) * delaySeconds,
       costUsd: cost === null ? null : todo.length * cost,
@@ -156,11 +170,12 @@ export const estimateAbc = ({ root, author, plan, delaySeconds }) => {
 };
 
 export const renderAbcEstimate = (e) => {
-  const copy = e.condition === "C" ? `、指摘なしで A のまま ${e.copy} 本` : "";
+  const copy = REVISED[e.condition] ? `、指摘なしで ${REVISED[e.condition]} のまま ${e.copy} 本` : "";
+  const pending = e.pending > 0 ? `、B を作ってから決める ${e.pending} 本（最大 ${e.pending} 本の呼び出し）` : "";
   const time = e.calls === 0 ? "" : e.seconds === null ? "、時間は不明" : `、約 ${minutes(e.seconds)}`;
   const cost = e.calls === 0 ? "" : e.costUsd === null ? "、費用は不明" : `、約 $${e.costUsd.toFixed(2)}`;
   const basis = e.calls === 0 ? "" : `（${e.basis}）`;
-  return `${e.condition}: 呼び出し ${e.calls} 本（新規 ${e.fresh}・作り直し ${e.stale}）${copy}、既存 ${e.cached} 本${time}${cost}${basis}`;
+  return `${e.condition}: 呼び出し ${e.calls} 本（新規 ${e.fresh}・作り直し ${e.stale}）${copy}、既存 ${e.cached} 本${pending}${time}${cost}${basis}`;
 };
 
 const writeOutput = (item, text, meta) => {
@@ -170,7 +185,7 @@ const writeOutput = (item, text, meta) => {
   fs.writeFileSync(item.metaFile, `${JSON.stringify(meta, null, 2)}\n`);
 };
 
-const cMeta = (item, revised) => {
+const revisedMeta = (item, revised) => {
   const problems = guard(item.draft, revised);
   return { findings: item.findings.length, draft_sha256: sha256(item.draft), guard: { pass: problems.length === 0, problems } };
 };
@@ -178,7 +193,7 @@ const cMeta = (item, revised) => {
 export const runAbc = async ({ corpus, plan, limit, delaySeconds, log = () => {} }) => {
   const { runner } = runnerOf(corpus, plan.runner);
   const { timeoutSeconds, retryDelaysSeconds } = corpus.config.control;
-  const summary = { called: [], copied: [], skipped: [], failed: [], guardFailed: [], rateLimited: null, unavailable: null };
+  const summary = { called: [], copied: [], skipped: [], pending: [], failed: [], guardFailed: [], rateLimited: null, unavailable: null };
   let first = true;
   for (const item of plan.items) {
     const label = `${item.condition} ${item.post.slug}`;
@@ -186,8 +201,12 @@ export const runAbc = async ({ corpus, plan, limit, delaySeconds, log = () => {}
       summary.skipped.push(label);
       continue;
     }
+    if (item.status === "pending") {
+      summary.pending.push(label);
+      continue;
+    }
     if (item.status === "copy") {
-      writeOutput(item, item.draft, { condition: "C", runner: plan.runner, called: false, findings: 0, draft_sha256: sha256(item.draft), date: new Date().toISOString() });
+      writeOutput(item, item.draft, { condition: item.condition, runner: plan.runner, called: false, findings: 0, draft_sha256: sha256(item.draft), date: new Date().toISOString() });
       summary.copied.push(label);
       continue;
     }
@@ -212,7 +231,7 @@ export const runAbc = async ({ corpus, plan, limit, delaySeconds, log = () => {}
         attempts: output.attempts,
         unwrapped: output.unwrapped,
         ...(item.condition === "B" ? { examples: plan.examples.map((example) => example.slug) } : {}),
-        ...(item.condition === "C" ? cMeta(item, output.text) : {}),
+        ...(REVISED[item.condition] ? revisedMeta(item, output.text) : {}),
         ...output.extra,
       };
       writeOutput(item, output.text, meta);
@@ -308,8 +327,57 @@ export const comparePaired = (xs, ys) => {
   return { wins, losses, ties: diffs.length - wins - losses, meanDiff: mean(diffs), ci: bootstrapMeanCi(diffs), p: signTest(wins, losses) };
 };
 
-const REPORT_CONDITIONS = ["A", "B", "C", "C戻し"];
-const COMPARISONS = [["B", "A"], ["C", "A"], ["C", "B"], ["C戻し", "A"]];
+const REPORT_CONDITIONS = ["A", "B", "C", "C戻し", "BC", "BC戻し"];
+const COMPARISONS = [["B", "A"], ["C", "A"], ["C", "B"], ["C戻し", "A"], ["BC", "B"], ["BC", "A"], ["BC戻し", "B"]];
+const CARICATURE_CONDITIONS = ["筆者", "A", "B", "BC"];
+
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+
+const formRegExp = (pattern) => {
+  const literal = /^\/(.+)\/([gimsuy]*)$/su.exec(pattern);
+  return literal ? new RegExp(literal[1], [...new Set([...literal[2], "g", "u"])].join("")) : new RegExp(escapeRegExp(pattern), "gu");
+};
+
+const lookahead = (pattern) => /\(\?=[^)]*\)\/[a-z]*$/u.exec(pattern)?.[0].replace(/\/[a-z]*$/u, "") ?? "";
+
+export const orthographyCounts = (entry, strs) => {
+  const patterns = entry.patterns ?? [entry.pattern];
+  const author = new RegExp(`${escapeRegExp(entry.expected)}${lookahead(patterns[0])}`, "gu");
+  const count = (regExp) => strs.reduce((sum, text) => sum + [...text.matchAll(regExp)].length, 0);
+  return { author: count(author), model: patterns.reduce((sum, pattern) => sum + count(formRegExp(pattern)), 0) };
+};
+
+const caricatureOf = async (profile, docsByCondition, opts) => {
+  const features = {};
+  for (const [condition, docs] of Object.entries(docsByCondition)) {
+    features[condition] = [];
+    for (const doc of docs) {
+      features[condition].push(await featuresOfMarkdown(doc, opts));
+    }
+  }
+  const orthography = profile.orthography.map((entry) => ({
+    label: `${entry.expected} / ${entry.patterns ?? entry.pattern}`,
+    values: Object.fromEntries(
+      Object.entries(features).map(([condition, docs]) => {
+        const counts = docs.map((doc) => orthographyCounts(entry, doc.strTokens.map((str) => str.text)));
+        const author = counts.reduce((sum, c) => sum + c.author, 0);
+        const total = author + counts.reduce((sum, c) => sum + c.model, 0);
+        return [condition, { author, total, share: total === 0 ? null : author / total }];
+      }),
+    ),
+  }));
+  const density = profile.density.map((entry) => ({
+    label: entry.tokens.map((token) => token.basic_form ?? token.surface_form).join("+"),
+    max: entry.max_per_1000,
+    values: Object.fromEntries(
+      Object.entries(features).map(([condition, docs]) => {
+        const rates = docRates(docs, entry.tokens, 0);
+        return [condition, { mean: mean(rates), over: rates.filter((rate) => rate > entry.max_per_1000).length }];
+      }),
+    ),
+  }));
+  return { orthography, density };
+};
 
 const readControlDocs = (root, author, runner, posts) =>
   posts
@@ -331,7 +399,7 @@ export const computeAbcReport = async ({ root, author, preset, corpus = loadCorp
   const opts = options(corpus);
   const posts = corpus[set].filter((post) => CONDITIONS.every((condition) => fs.existsSync(path.join(dir, condition, `${post.slug}.md`))) && fs.existsSync(controlFile(root, author, runner, post.slug)));
   if (posts.length === 0) {
-    throw new Error(`${set} に B と C の両方がある記事がない。先に onajimi abc --yes を実行する。`);
+    throw new Error(`${set} に B・C・BC がそろった記事がない。先に onajimi abc --yes を実行する。`);
   }
   const rows = posts.map((post) => {
     const aFile = controlFile(root, author, runner, post.slug);
@@ -341,8 +409,15 @@ export const computeAbcReport = async ({ root, author, preset, corpus = loadCorp
       raw[condition] = fs.readFileSync(path.join(dir, condition, `${post.slug}.md`), "utf8");
       meta[condition] = readMeta(path.join(dir, condition, `${post.slug}.json`)) ?? {};
     }
-    const guardPass = meta.C.called === false || meta.C.guard?.pass === true;
-    raw["C戻し"] = guardPass ? raw.C : raw.A;
+    const revision = Object.fromEntries(
+      Object.entries(REVISED).map(([condition, before]) => {
+        const m = meta[condition];
+        const called = m.called !== false;
+        return [condition, { called, findings: m.findings ?? 0, guardPass: !called || m.guard?.pass === true, problems: m.guard?.problems ?? [], editRatio: editRatio(raw[before], raw[condition]) }];
+      }),
+    );
+    raw["C戻し"] = revision.C.guardPass ? raw.C : raw.A;
+    raw["BC戻し"] = revision.BC.guardPass ? raw.BC : raw.B;
     const docs = Object.fromEntries(REPORT_CONDITIONS.map((condition) => [condition, stripTitle(raw[condition], post.meta)]));
     const target = buildBrief(post, opts).chars;
     return {
@@ -350,11 +425,7 @@ export const computeAbcReport = async ({ root, author, preset, corpus = loadCorp
       author: stripTitle(post.text, post.meta),
       docs,
       meta,
-      cCalled: meta.C.called !== false,
-      findings: meta.C.findings ?? 0,
-      guardPass,
-      guardProblems: meta.C.guard?.problems ?? [],
-      editRatio: editRatio(raw.A, raw.C),
+      revision,
       lengthRatio: Object.fromEntries(REPORT_CONDITIONS.map((condition) => [condition, analyzeProse(docs[condition], opts).chars / target])),
     };
   });
@@ -365,7 +436,8 @@ export const computeAbcReport = async ({ root, author, preset, corpus = loadCorp
   const reference = [...authorProfile, ...controlProfile];
   const authorTest = await countAll(rows.map((row) => row.author), opts);
   const outputs = Object.fromEntries(await Promise.all(REPORT_CONDITIONS.map(async (condition) => [condition, await countAll(rows.map((row) => row.docs[condition]), opts)])));
-  const isDictionary = dictionaryTokens(parseProfile(fs.readFileSync(path.join(authorDir(root, author), "profile.yml"), "utf8")));
+  const profile = parseProfile(fs.readFileSync(path.join(authorDir(root, author), "profile.yml"), "utf8"));
+  const isDictionary = dictionaryTokens(profile);
   const variants = [
     { label: "全トークン", exclude: () => false },
     { label: "辞書の語を除く", exclude: isDictionary },
@@ -410,7 +482,8 @@ export const computeAbcReport = async ({ root, author, preset, corpus = loadCorp
       return [condition, { calls: metas.length, totalUsd: usd.reduce((s, v) => s + v, 0), meanUsd: mean(usd), meanSeconds: ms.length === 0 ? null : mean(ms) / 1000, totalSeconds: ms.reduce((s, v) => s + v, 0) / 1000 }];
     }),
   );
-  return { set, runner, rows, deltas, findings, cost, referenceDocs: { author: authorProfile.length, controls: controlProfile.length } };
+  const caricature = await caricatureOf(profile, Object.fromEntries(CARICATURE_CONDITIONS.map((condition) => [condition, rows.map((row) => (condition === "筆者" ? row.author : row.docs[condition]))])), opts);
+  return { set, runner, rows, deltas, findings, cost, caricature, referenceDocs: { author: authorProfile.length, controls: controlProfile.length } };
 };
 
 const f3 = (value) => (value === null || value === undefined || Number.isNaN(value) ? "-" : value.toFixed(3));
@@ -428,16 +501,42 @@ const comparisonTable = (comparisons) => [
   ...comparisons.map((c) => `| ${c.x} vs ${c.y} | ${c.wins} | ${c.losses} | ${c.ties} | ${f3(c.meanDiff)} | [${f3(c.ci[0])}, ${f3(c.ci[1])}] | ${f3(c.p)} |`),
 ];
 
+const pct = (value) => (value === null ? "-" : `${Math.round(value * 100)}%`);
+
+const caricatureTable = ({ orthography, density }) => [
+  `| 項目 | 目安 | ${CARICATURE_CONDITIONS.join(" | ")} |`,
+  `|---|---|${CARICATURE_CONDITIONS.map(() => "---").join("|")}|`,
+  ...orthography.map((row) => `| 表記 ${row.label} | - | ${CARICATURE_CONDITIONS.map((condition) => {
+    const v = row.values[condition];
+    return `${pct(v.share)}（${v.author}/${v.total}）`;
+  }).join(" | ")} |`),
+  ...density.map((row) => `| 密度 ${row.label} | ${row.max} | ${CARICATURE_CONDITIONS.map((condition) => {
+    const v = row.values[condition];
+    return `${f2(v.mean)}（超え ${v.over}）`;
+  }).join(" | ")} |`),
+];
+
+const revisionLines = (rows, condition) => {
+  const before = REVISED[condition];
+  const called = rows.filter((row) => row.revision[condition].called);
+  return [
+    `- ${condition} で呼び出した ${called.length} 本のうち guard 通過 ${called.filter((row) => row.revision[condition].guardPass).length} 本。指摘なしで ${before} のままの記事 ${rows.length - called.length} 本`,
+    `- ${condition} と ${before} の文字単位の編集率（1 − 2·LCS/(|${before}|+|${condition}|)）: 平均 ${f3(mean(rows.map((row) => row.revision[condition].editRatio)))}、中央値 ${f3(median(rows.map((row) => row.revision[condition].editRatio)))}`,
+  ];
+};
+
+const revisionCells = (revision) => [revision.findings, revision.called ? (revision.guardPass ? "通過" : "失敗") : "しない", f3(revision.editRatio)];
+
 export const renderAbcReport = (report) => {
-  const { rows, deltas, findings, cost } = report;
+  const { rows, deltas, findings, cost, caricature } = report;
   const main = deltas.filter((entry) => entry.size === MAIN_SIZE);
-  const called = rows.filter((row) => row.cCalled);
+  const winPairs = [["B", "A"], ["C", "A"], ["C", "B"], ["BC", "A"], ["BC", "B"]];
   const out = [
     `# A/B/C（${report.set} ${rows.length} 本、runner ${report.runner}）`,
     "",
-    "A は対照の素の出力、B は文体の指示と筆者の例 3 本を足した出力、C は A に lint の指摘を 1 回だけ直させた出力。C戻し は guard に落ちた C を A に戻したもの（スキルの手順どおりの最悪の場合）。",
+    "A は対照の素の出力、B は文体の指示と筆者の例 3 本を足した出力、C は A に lint の指摘を 1 回だけ直させた出力、BC は B に C と同じ手順で lint の指摘を 1 回だけ直させた出力。C戻し・BC戻し は guard に落ちた C・BC を A・B に戻したもの（スキルの手順どおりの最悪の場合）。",
     `Delta の語彙と z の平均・標準偏差は、筆者のプロファイル用 ${report.referenceDocs.author} 本と、その対照 ${report.referenceDocs.controls} 本から決めた（test は使っていない）。勝ちは Delta が小さいほう。差は前者 − 後者で、負なら前者が筆者に近い。`,
-    report.set === "test" ? "注: 辞書づくりのあいだに test を見たことがあるなら、C に有利な向きの偏りがある。" : "",
+    report.set === "test" ? "注: 辞書づくりのあいだに test を見たことがあるなら、C と BC に有利な向きの偏りがある。" : "",
     "",
     `## 1. Burrows の Delta（同じ slug の筆者の記事との距離、N=${MAIN_SIZE}）`,
   ];
@@ -448,17 +547,23 @@ export const renderAbcReport = (report) => {
   for (const entry of main) {
     out.push("", `### ${entry.variant}`, "", ...deltaTable(entry, "toCenter"), "", ...comparisonTable(entry.centerComparisons));
   }
-  out.push("", "## 3. N を変えたとき（同じ slug との Delta の平均）", "", "| N | 語彙 | 特徴 | A | B | C | C戻し | B 勝ち/A | C 勝ち/A | C 勝ち/B |", "|---|---|---|---|---|---|---|---|---|---|");
+  out.push(
+    "",
+    "## 3. N を変えたとき（同じ slug との Delta の平均）",
+    "",
+    `| N | 語彙 | 特徴 | ${REPORT_CONDITIONS.join(" | ")} | ${winPairs.map(([x, y]) => `${x} 勝ち/${y}`).join(" | ")} |`,
+    `|---|---|---|${[...REPORT_CONDITIONS, ...winPairs].map(() => "---").join("|")}|`,
+  );
   for (const entry of deltas) {
     const wins = (x, y) => {
       const c = entry.comparisons.find((item) => item.x === x && item.y === y);
       return `${c.wins}/${c.wins + c.losses + c.ties}`;
     };
-    out.push(`| ${entry.size} | ${entry.variant} | ${entry.features} | ${REPORT_CONDITIONS.map((condition) => f3(mean(entry.pair[condition]))).join(" | ")} | ${wins("B", "A")} | ${wins("C", "A")} | ${wins("C", "B")} |`);
+    out.push(`| ${entry.size} | ${entry.variant} | ${entry.features} | ${REPORT_CONDITIONS.map((condition) => f3(mean(entry.pair[condition]))).join(" | ")} | ${winPairs.map(([x, y]) => wins(x, y)).join(" | ")} |`);
   }
   out.push(
     "",
-    "## 4. lint の指摘（C には循環。C は指摘を減らすように作っている）",
+    "## 4. lint の指摘（C と BC には循環。指摘を減らすように作っている）",
     "",
     "| 条件 | 記事 | 字数 | 指摘 | 文書単位 | 1000字あたり |",
     "|---|---|---|---|---|---|",
@@ -469,8 +574,8 @@ export const renderAbcReport = (report) => {
     "",
     "## 5. 壊していないか",
     "",
-    `- C で呼び出した ${called.length} 本のうち guard 通過 ${called.filter((row) => row.guardPass).length} 本。指摘なしで A のままの記事 ${rows.length - called.length} 本`,
-    `- C と A の文字単位の編集率（1 − 2·LCS/(|A|+|C|)）: 平均 ${f3(mean(rows.map((row) => row.editRatio)))}、中央値 ${f3(median(rows.map((row) => row.editRatio)))}`,
+    ...revisionLines(rows, "C"),
+    ...revisionLines(rows, "BC"),
     `- 指示した字数に対する地の文の字数の比: ${REPORT_CONDITIONS.map((condition) => `${condition} ${f2(mean(rows.map((row) => row.lengthRatio[condition])))}`).join("、")}`,
     "",
     "## 6. 費用と時間",
@@ -484,16 +589,22 @@ export const renderAbcReport = (report) => {
     "",
     "## 7. 記事ごと",
     "",
-    `| slug | A の指摘 | C 呼び出し | guard | 編集率 | Delta A | Delta B | Delta C | Delta C戻し | 字数比 A | 字数比 B |`,
-    "|---|---|---|---|---|---|---|---|---|---|---|",
+    `| slug | A の指摘 | C guard | 編集率 C/A | B の指摘 | BC guard | 編集率 BC/B | ${REPORT_CONDITIONS.map((condition) => `Delta ${condition}`).join(" | ")} | 字数比 A | 字数比 B | 字数比 BC |`,
+    `|---|${[...Array(9 + REPORT_CONDITIONS.length)].map(() => "---").join("|")}|`,
     ...rows.map((row, i) => {
       const pair = main[0].pair;
-      return `| ${row.slug} | ${row.findings} | ${row.cCalled ? "する" : "しない"} | ${row.cCalled ? (row.guardPass ? "通過" : "失敗") : "-"} | ${f3(row.editRatio)} | ${REPORT_CONDITIONS.map((condition) => f3(pair[condition][i])).join(" | ")} | ${f2(row.lengthRatio.A)} | ${f2(row.lengthRatio.B)} |`;
+      return `| ${row.slug} | ${[...revisionCells(row.revision.C), ...revisionCells(row.revision.BC)].join(" | ")} | ${REPORT_CONDITIONS.map((condition) => f3(pair[condition][i])).join(" | ")} | ${f2(row.lengthRatio.A)} | ${f2(row.lengthRatio.B)} | ${f2(row.lengthRatio.BC)} |`;
     }),
+    "",
+    "## 8. 筆者の癖を誇張していないか（辞書の語の出方）",
+    "",
+    `表記は筆者側の形の割合（筆者側/両方の回数）、密度は記事ごとの 1000 字あたりの平均（目安を超えた記事の数）。筆者は同じ slug の test の記事 ${rows.length} 本。`,
+    "",
+    ...caricatureTable(caricature),
   );
-  const failed = rows.filter((row) => row.guardProblems.length > 0);
+  const failed = rows.flatMap((row) => Object.keys(REVISED).flatMap((condition) => row.revision[condition].problems.map((problem) => `- ${condition} ${row.slug}: ${problem}`)));
   if (failed.length > 0) {
-    out.push("", "guard の指摘:", ...failed.flatMap((row) => row.guardProblems.map((problem) => `- ${row.slug}: ${problem}`)));
+    out.push("", "guard の指摘:", ...failed);
   }
   return `${out.filter((line, i, all) => !(line === "" && all[i - 1] === "")).join("\n")}\n`;
 };
@@ -533,7 +644,18 @@ export const abcCommand = async ({ root, author, preset, runner, set = "test", o
     return NEEDS_YES;
   }
   const summary = await runAbc({ corpus, plan, limit, delaySeconds: delay, log });
-  say(`呼び出し ${summary.called.length}、A のまま ${summary.copied.length}、既存 ${summary.skipped.length}、失敗 ${summary.failed.length}、guard 失敗 ${summary.guardFailed.length}`);
+  if (summary.pending.length > 0 && !summary.rateLimited && !summary.unavailable) {
+    const next = await planAbc({ root, author, corpus, runner, set, only, exampleCategory, lintText });
+    const used = summary.called.length + summary.failed.length;
+    const rest = await runAbc({ corpus, plan: { ...next, items: next.items.filter((item) => item.condition === "BC") }, limit: limit === undefined ? undefined : Math.max(0, limit - used), delaySeconds: delay, log });
+    for (const key of ["called", "copied", "failed", "guardFailed"]) {
+      summary[key].push(...rest[key]);
+    }
+    summary.skipped.push(...rest.skipped.filter((label) => summary.pending.includes(label)));
+    Object.assign(summary, { pending: rest.pending, rateLimited: rest.rateLimited, unavailable: rest.unavailable });
+  }
+  const pending = summary.pending.length > 0 ? `、B 待ち ${summary.pending.length}` : "";
+  say(`呼び出し ${summary.called.length}、写し ${summary.copied.length}、既存 ${summary.skipped.length}${pending}、失敗 ${summary.failed.length}、guard 失敗 ${summary.guardFailed.length}`);
   for (const call of summary.called) {
     say(`${call.label}: ${(call.durationMs / 1000).toFixed(1)} 秒${typeof call.costUsd === "number" ? `、$${call.costUsd.toFixed(3)}` : ""}`);
   }

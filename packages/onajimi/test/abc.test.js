@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { bootstrapMeanCi, editRatio, excerpt, median, pickExamples, revisePrompt, signTest, stylePrompt } from "../src/abc.js";
+import { bootstrapMeanCi, editRatio, excerpt, median, orthographyCounts, pickExamples, planAbc, revisePrompt, signTest, stylePrompt } from "../src/abc.js";
+import { sha256 } from "../src/control.js";
+import { loadCorpus } from "../src/corpus.js";
+import { createAuthorLinter } from "../src/lint.js";
+import preset from "../../textlint-rule-preset-onajimi/index.js";
 import { centroid, delta, dictionaryTokens, fitScaler, mostFrequent, tokenCounts, zVector } from "../src/delta.js";
 import { proseParagraphs } from "../src/prose.js";
 import { run } from "./helpers.js";
@@ -107,27 +111,32 @@ const prepare = () => {
 
 const calls = (log) => fs.readFileSync(log, "utf8").split("\n").filter(Boolean).length;
 
-test("abc estimates, gates on --yes, runs B and C once, and reports", () => {
+test("orthographyCounts counts the author's form and the model's form with the same lookahead", () => {
+  assert.deepEqual(orthographyCounts({ expected: "分か", pattern: "/わか(?=[っらりるれ])/" }, ["分かる。わかった。わかめ。", "分かれ道"]), { author: 2, model: 1 });
+  assert.deepEqual(orthographyCounts({ expected: "全て", pattern: "すべて" }, ["全て、すべて、すべて。"]), { author: 1, model: 2 });
+});
+
+test("abc estimates, gates on --yes, runs B, C and BC once, and reports", () => {
   const { root, log, dir } = prepare();
   const base = ["abc", "--root", root, "--author", "demo", "--delay", "0"];
   const before = calls(log);
   const gated = run(base);
   assert.equal(gated.code, 5, gated.stderr);
-  assert.match(gated.stdout, /^runner fake、test 3 本、例: p08, p07, p06\nB: 呼び出し 3 本（新規 3・作り直し 0）、既存 0 本、約 \d+ 秒、約 \$0\.03（A の 3 本の平均から）\nC: 呼び出し 2 本（新規 2・作り直し 0）、指摘なしで A のまま 1 本、既存 0 本/u);
+  assert.match(gated.stdout, /^runner fake、test 3 本、例: p08, p07, p06\nB: 呼び出し 3 本（新規 3・作り直し 0）、既存 0 本、約 \d+ 秒、約 \$0\.03（A の 3 本の平均から）\nC: 呼び出し 2 本（新規 2・作り直し 0）、指摘なしで A のまま 1 本、既存 0 本、約 \d+ 秒、約 \$0\.02（A の 3 本の平均から）\nBC: 呼び出し 0 本（新規 0・作り直し 0）、指摘なしで B のまま 0 本、既存 0 本、B を作ってから決める 3 本（最大 3 本の呼び出し）\n/u);
   assert.equal(run([...base, "--estimate"]).code, 0);
   assert.equal(calls(log), before);
   assert.equal(fs.existsSync(dir), false);
 
   const first = run([...base, "--yes", "--limit", "1"]);
   assert.equal(first.code, 0, first.stderr);
-  assert.match(first.stdout, /^呼び出し 1、A のまま 0、既存 0、失敗 0、guard 失敗 0\nB p09: /u);
+  assert.match(first.stdout, /^呼び出し 1、写し 0、既存 0、失敗 0、guard 失敗 0\nB p09: /u);
   const second = run([...base, "--yes"]);
   assert.equal(second.code, 0, second.stderr);
-  assert.match(second.stdout, /^呼び出し 4、A のまま 1、既存 1、失敗 0、guard 失敗 1\n/u);
-  assert.equal(calls(log), before + 5);
-  assert.match(run([...base, "--estimate"]).stdout, /B: 呼び出し 0 本（新規 0・作り直し 0）、既存 3 本\nC: 呼び出し 0 本（新規 0・作り直し 0）、指摘なしで A のまま 0 本、既存 3 本/u);
-  assert.equal(run([...base, "--yes"]).stdout, "呼び出し 0、A のまま 0、既存 6、失敗 0、guard 失敗 0\n");
-  assert.equal(calls(log), before + 5);
+  assert.match(second.stdout, /^呼び出し 6、写し 2、既存 1、失敗 0、guard 失敗 2\n/u);
+  assert.equal(calls(log), before + 7);
+  assert.match(run([...base, "--estimate"]).stdout, /B: 呼び出し 0 本（新規 0・作り直し 0）、既存 3 本\nC: 呼び出し 0 本（新規 0・作り直し 0）、指摘なしで A のまま 0 本、既存 3 本\nBC: 呼び出し 0 本（新規 0・作り直し 0）、指摘なしで B のまま 0 本、既存 3 本\n/u);
+  assert.equal(run([...base, "--yes"]).stdout, "呼び出し 0、写し 0、既存 9、失敗 0、guard 失敗 0\n");
+  assert.equal(calls(log), before + 7);
 
   assert.match(fs.readFileSync(path.join(dir, "B/p09.md"), "utf8"), /例を読んだ。/u);
   const bMeta = JSON.parse(fs.readFileSync(path.join(dir, "B/p09.json"), "utf8"));
@@ -146,17 +155,29 @@ test("abc estimates, gates on --yes, runs B and C once, and reports", () => {
 
   const report = run([...base, "--report"]);
   assert.equal(report.code, 0, report.stderr);
-  assert.equal(calls(log), before + 5);
+  assert.equal(calls(log), before + 7);
   const text = fs.readFileSync(path.join(dir, "report.md"), "utf8");
   assert.match(text, /^# A\/B\/C（test 3 本、runner fake）/u);
-  for (const heading of ["1. Burrows の Delta", "2. プロファイル用の筆者の重心", "3. N を変えたとき", "4. lint の指摘", "5. 壊していないか", "6. 費用と時間", "7. 記事ごと"]) {
+  for (const heading of ["1. Burrows の Delta", "2. プロファイル用の筆者の重心", "3. N を変えたとき", "4. lint の指摘", "5. 壊していないか", "6. 費用と時間", "7. 記事ごと", "8. 筆者の癖を誇張していないか"]) {
     assert.match(text, new RegExp(`## ${heading}`, "u"), heading);
   }
   assert.match(text, /C で呼び出した 2 本のうち guard 通過 1 本。指摘なしで A のままの記事 1 本/u);
-  assert.match(text, /\| C vs A \| \d \| \d \| \d \| /u);
-  assert.match(text, /\| p10 \| 1 \| する \| 失敗 \| /u);
-  assert.match(text, /- p10: 数値 3 が減った/u);
+  assert.match(text, /BC で呼び出した 2 本のうち guard 通過 1 本。指摘なしで B のままの記事 1 本/u);
+  for (const pair of ["C vs A", "BC vs B", "BC vs A", "BC戻し vs B"]) {
+    assert.match(text, new RegExp(`\\| ${pair} \\| \\d \\| \\d \\| \\d \\| `, "u"), pair);
+  }
+  for (const condition of ["BC", "BC戻し"]) {
+    assert.match(text, new RegExp(`\\| ${condition} \\| [0-9.]+ \\| [0-9.]+ \\|\n`, "u"), condition);
+    assert.match(text, new RegExp(`\\| ${condition} \\| 3 \\| \\d+ \\| \\d+ \\| `, "u"), condition);
+  }
+  assert.match(text, /\| N \| 語彙 \| 特徴 \| A \| B \| C \| C戻し \| BC \| BC戻し \| B 勝ち\/A \| C 勝ち\/A \| C 勝ち\/B \| BC 勝ち\/A \| BC 勝ち\/B \|/u);
+  assert.match(text, /\| p10 \| 1 \| 失敗 \| [0-9.]+ \| 1 \| 失敗 \| /u);
+  assert.match(text, /\| p11 \| 0 \| しない \| 0\.000 \| 0 \| しない \| 0\.000 \| /u);
+  assert.match(text, /- C p10: 数値 3 が減った/u);
+  assert.match(text, /- BC p10: 数値 3 が減った/u);
   assert.match(text, /\| B \| 3 \| 0\.03 \| 0\.010 \| /u);
+  assert.match(text, /\| BC \| 2 \| 0\.02 \| 0\.010 \| /u);
+  assert.match(text, /\| 項目 \| 目安 \| 筆者 \| A \| B \| BC \|/u);
 });
 
 test("abc refuses when A is missing for the chosen posts", () => {
@@ -165,4 +186,33 @@ test("abc refuses when A is missing for the chosen posts", () => {
   const result = run(["abc", "--root", root, "--author", "demo", "--estimate"]);
   assert.equal(result.code, 2);
   assert.match(result.stderr, /A（fake の対照）がない: p10/u);
+});
+
+test("BC revises B's drafts into BC, copies B when there are no findings, and follows B's text", async () => {
+  const { root } = prepare();
+  const corpus = loadCorpus(root, "demo");
+  const { lintText } = await createAuthorLinter(root, "demo", preset);
+  const plan = async () => (await planAbc({ root, author: "demo", corpus, lintText })).items.filter((item) => item.condition === "BC");
+  assert.deepEqual((await plan()).map((item) => item.status), ["pending", "pending", "pending"]);
+
+  const result = run(["abc", "--root", root, "--author", "demo", "--delay", "0", "--yes"]);
+  assert.equal(result.code, 0, result.stderr);
+  const dir = path.join(root, "authors/demo/experiments/abc");
+  const read = (file) => fs.readFileSync(path.join(dir, file), "utf8");
+  const items = await plan();
+  assert.deepEqual(items.map((item) => [item.post.slug, item.status, item.target]), ["p09", "p10", "p11"].map((slug) => [slug, "cached", path.join(dir, "BC", `${slug}.md`)]));
+  assert.equal(items[0].draft, read("B/p09.md"));
+  assert.match(items[0].prompt, /--- 下書きここから ---\n# 通の題\n\n例を読んだ。本文を読んだ。これなら出来る。\n--- 下書きここまで ---$/u);
+  assert.equal(read("BC/p09.md"), read("B/p09.md").replace("出来る", "できる"));
+  const passed = JSON.parse(read("BC/p09.json"));
+  assert.equal(passed.condition, "BC");
+  assert.equal(passed.findings, 1);
+  assert.deepEqual(passed.guard, { pass: true, problems: [] });
+  assert.equal(JSON.parse(read("BC/p10.json")).guard.pass, false);
+  assert.equal(read("BC/p11.md"), read("B/p11.md"));
+  assert.deepEqual([JSON.parse(read("BC/p11.json")).called, JSON.parse(read("BC/p11.json")).draft_sha256], [false, sha256(read("B/p11.md"))]);
+  assert.equal(items[2].prompt, null);
+
+  fs.writeFileSync(path.join(dir, "B/p09.md"), read("B/p09.md").replace("本文を読んだ。", "本文を読んで考えた。"));
+  assert.deepEqual((await plan()).map((item) => item.status), ["stale", "cached", "cached"]);
 });
