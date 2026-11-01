@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 350" width="980" height="350" role="img" aria-labelledby="title desc">
+  <title id="title">oh-my-onajimi の仕組み</title>
+  <desc id="desc">筆者の過去の記事と、同じ見出しでモデルに書かせた記事を onajimi profile で比べ、差の候補から人が選んで筆者の辞書を作る。記事を仕上げるときは、モデルの下書きに onajimi lint をかけ、指摘された箇所だけを 1 回直し、onajimi guard で数値と否定が変わっていないかを確かめる。</desc>
+  <style>
+    .section { font: 600 15px "Hiragino Sans", "Noto Sans JP", "Yu Gothic", "Gen Shin Gothic", system-ui, sans-serif; fill: #6b665d; }
+    .title { font: 600 15px "Hiragino Sans", "Noto Sans JP", "Yu Gothic", "Gen Shin Gothic", system-ui, sans-serif; fill: #2b2a28; }
+    .sub { font: 12px "Hiragino Sans", "Noto Sans JP", "Yu Gothic", "Gen Shin Gothic", system-ui, sans-serif; fill: #6b665d; }
+    .label { font: 600 13px "Hiragino Sans", "Noto Sans JP", "Yu Gothic", "Gen Shin Gothic", system-ui, sans-serif; fill: #2b2a28; }
+    .code { font: 11.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #6b665d; }
+    .box { fill: #f6f3ee; stroke: #cfc8bc; stroke-width: 1.2; }
+    .dict { fill: #e9effa; stroke: #6f8fca; stroke-width: 1.6; }
+    .done { fill: #eaf5ec; stroke: #78ab83; stroke-width: 1.4; }
+    .arrow { stroke: #8f897f; stroke-width: 1.6; fill: none; }
+    .use { stroke: #6f8fca; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+    .head { fill: #8f897f; }
+    .usehead { fill: #6f8fca; }
+    @media (prefers-color-scheme: dark) {
+      .section, .sub, .code { fill: #a8a296; }
+      .title, .label { fill: #ece7de; }
+      .box { fill: #2b2a27; stroke: #59544b; }
+      .dict { fill: #1f2a40; stroke: #7f9ed8; }
+      .done { fill: #1f3324; stroke: #6fa57b; }
+      .arrow { stroke: #a39d92; }
+      .head { fill: #a39d92; }
+      .use { stroke: #7f9ed8; }
+      .usehead { fill: #7f9ed8; }
+    }
+  </style>
+  <defs>
+    <marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="head"/>
+    </marker>
+    <marker id="u" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="usehead"/>
+    </marker>
+  </defs>
+
+  <text x="20" y="28" class="section">1. 辞書を作る（筆者ごとに一度）</text>
+
+  <rect x="20" y="46" width="200" height="52" rx="8" class="box"/>
+  <text x="120" y="77" text-anchor="middle" class="title">筆者の過去の記事</text>
+
+  <rect x="20" y="112" width="200" height="56" rx="8" class="box"/>
+  <text x="120" y="135" text-anchor="middle" class="title">同じ見出しで</text>
+  <text x="120" y="156" text-anchor="middle" class="title">モデルに書かせた記事</text>
+
+  <path d="M220,72 H262 V107" class="arrow"/>
+  <path d="M220,140 H262 V107 H372" class="arrow" marker-end="url(#h)"/>
+  <text x="318" y="98" text-anchor="middle" class="label">比べる</text>
+  <text x="318" y="124" text-anchor="middle" class="code">onajimi profile</text>
+
+  <rect x="380" y="80" width="210" height="54" rx="8" class="box"/>
+  <text x="485" y="103" text-anchor="middle" class="title">差の候補</text>
+  <text x="485" y="123" text-anchor="middle" class="sub">表記・頻度・装飾</text>
+
+  <path d="M590,107 H702" class="arrow" marker-end="url(#h)"/>
+  <text x="646" y="98" text-anchor="middle" class="label">人が選ぶ</text>
+  <text x="646" y="124" text-anchor="middle" class="code">onajimi accept</text>
+
+  <rect x="710" y="80" width="250" height="54" rx="8" class="dict"/>
+  <text x="835" y="103" text-anchor="middle" class="title">筆者の辞書</text>
+  <text x="835" y="123" text-anchor="middle" class="sub">profile.yml → textlint のルール</text>
+
+  <text x="20" y="226" class="section">2. 記事を仕上げる（記事ごとに）</text>
+
+  <path d="M835,134 V204 H268 V262" class="use" marker-end="url(#u)"/>
+  <text x="845" y="172" class="sub">辞書を使う</text>
+
+  <rect x="20" y="246" width="150" height="52" rx="8" class="box"/>
+  <text x="95" y="277" text-anchor="middle" class="title">モデルの下書き</text>
+
+  <path d="M170,272 H292" class="arrow" marker-end="url(#h)"/>
+  <text x="244" y="292" text-anchor="middle" class="label">検査する</text>
+  <text x="244" y="308" text-anchor="middle" class="code">onajimi lint</text>
+
+  <rect x="300" y="246" width="160" height="52" rx="8" class="box"/>
+  <text x="380" y="268" text-anchor="middle" class="title">指摘</text>
+  <text x="380" y="287" text-anchor="middle" class="sub">癖から外れた箇所</text>
+
+  <path d="M460,272 H612" class="arrow" marker-end="url(#h)"/>
+  <text x="536" y="262" text-anchor="middle" class="label">その箇所だけ直す</text>
+  <text x="536" y="292" text-anchor="middle" class="sub">モデルが 1 回だけ</text>
+
+  <rect x="620" y="246" width="130" height="52" rx="8" class="box"/>
+  <text x="685" y="277" text-anchor="middle" class="title">直した稿</text>
+
+  <path d="M750,272 H812" class="arrow" marker-end="url(#h)"/>
+  <text x="781" y="292" text-anchor="middle" class="label">確かめる</text>
+  <text x="781" y="308" text-anchor="middle" class="code">guard</text>
+
+  <rect x="820" y="246" width="140" height="52" rx="8" class="done"/>
+  <text x="890" y="268" text-anchor="middle" class="title">できあがり</text>
+  <text x="890" y="287" text-anchor="middle" class="sub">数値・否定は元のまま</text>
+</svg>
