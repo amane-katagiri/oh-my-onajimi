@@ -9,7 +9,7 @@ const fakeRunner = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "f
 export const post = ({ title, date, category = "tech", author = "Demo", aiSummary = "要点。", body }) =>
   [`title: ${title}`, `author: ${author}`, "summary: 副題", `date: ${date}T10:00:00+09:00`, `category: ${category}`, `ai_summary: ${aiSummary}`, "", body, ""].join("\n");
 
-export const makeCorpusRoot = (posts, { runners } = {}) => {
+export const makeCorpusRoot = (posts, { runners, devRatio = 0, profile = {} } = {}) => {
   const root = makeRoot();
   const dir = path.join(root, "authors/demo");
   fs.mkdirSync(path.join(dir, "corpus/post"), { recursive: true });
@@ -20,6 +20,7 @@ export const makeCorpusRoot = (posts, { runners } = {}) => {
   const config = {
     select: { author: "Demo", categories: ["tech", "ugoki"], since: "2020-01-01" },
     test_ratio: 0.25,
+    dev_ratio: devRatio,
     exclude_sections: [{ post: "with-extra", from_heading: "おまけ" }],
     skip_paragraphs: ["[TOC]"],
     control: {
@@ -33,7 +34,7 @@ export const makeCorpusRoot = (posts, { runners } = {}) => {
         down: { command: [process.execPath, fakeRunner, log, "flaky", "99"], output: "json", rate_limit: "429", unavailable: "503" },
       },
     },
-    profile: { alpha0: 100, min_docs: 1, min_count: 1, proposal_z: -0.5, proposal_max_author_docs: 1, rate_z: -0.5, proposal_limit: 10 },
+    profile: { alpha0: 100, min_docs: 1, min_count: 1, proposal_z: -0.5, proposal_max_author_docs: 1, rate_z: -0.5, proposal_limit: 10, min_chars: 0, ...profile },
   };
   fs.writeFileSync(path.join(dir, "corpus.yml"), YAML.stringify(config));
   return { root, log };

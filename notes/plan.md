@@ -195,6 +195,12 @@ description: 日本語の記事を書き終えたあと、指定した筆者の�
   - candidates に「指示に含まれていた文書数」の列を足す。
   - 指示に含まれていた語は proposal から外すか、印を付ける。
 
+## 手作業をツールにした（2026-11-01）
+- 記事は profile / dev / test の 3 つに分ける。辞書の誤検出は dev で見て、test は最後の評価にだけ使う。amane の test 22 本は前の分け方と同じ。
+- 表記の組、後ろに続く語、指示への混入（`in_brief_docs` と `excluded_in_brief`）、他ジャンルでの頻度、密度ルール（`phrase-density`）と短い文書の除外（`min_chars`）を profile と preset に入れた。太字ラベルの箇条書きと斜体の割合も decoration-density で見る。
+- `onajimi review` が、人や AI が一度で読める review.md にまとめる。`onajimi pipeline` が split から review までを通し、`onajimi init` がひな形を書く。
+- わかったこと: 様々/さまざま は gemini が筆者と同じく「様々」を選ぶので、「どの runner も」の条件では出ない。斜体の割合は筆者自身の記事でも 0 から 1 まで散らばっていて、文書単位のしきい値では筆者とモデルを分けられない。
+
 ## 決まったこと
 - 最初の筆者コーパス: ama.ne.jp のブログ記事（Markdown 原稿）
 - 対照に使うモデル: Opus（主）と Gemini Flash 系（副）

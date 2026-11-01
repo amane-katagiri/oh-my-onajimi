@@ -1,0 +1,14 @@
+{
+  "rules": {
+    "preset-onajimi": {
+      "decoration-density": {
+        "maxBoldPer1000": 5,
+        "minChars": 100,
+        "maxBoldLabelItems": 0,
+        "minEmphasisShare": 0.3,
+        "minEmphasisMarks": 3,
+        "typicalEmphasisShare": 0.6
+      }
+    }
+  }
+}

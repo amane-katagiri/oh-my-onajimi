@@ -1,74 +1,149 @@
-note: >-
-  初版。onajimi profile（記事 tech/ugoki のプロファイル用 64 本 と、同じ見出しで書かせた opus/gemini 各 64 本）の結果から人が選んだ。
-  evidence の数はプロファイル用の記事での出現数。筆者の記事でほぼ使われず、両方のモデルが使う語だけを model_leaning にした。
-  ふと・思わず・推奨などは記事では使わないが小説（lily）では使うので、このプロファイルは記事専用。
-  対照の指示に ai_summary を渡しているので、ai_summary に出る語（試み など）は対照側に写り込んでいる恐れがあり、入れていない。
-
+note: |-
+  第 2 版。onajimi review（記事 tech/ugoki、プロファイル用 54 本と同じ見出しの opus/gemini 各 54 本）から人が選び、dev 10 本で誤検出を確かめた。
+  表記の差がいちばん強い信号なので orthography を中心にした。くん/クン は対照側の「トークン」などを拾った誤った組なので入れない。様々/さまざま は gemini が筆者と同じ表記なので入れない。
+  model_leaning は話題の語・ジャンルで使い方が変わる語・指示に含まれていた語を除くと「くれます」だけが残った。初版の ふと・〜た瞬間・思わず・どこか・試み・大切→重要・推奨→おすすめ は、指示への混入か dev での筆者の使用が分かったので外した。
+  density は筆者も使うが頻度が違う語。話題の語（サーバー、文字、本など）と、筆者の上限が高くて対照がほぼ引っかからない語（た。）は入れていない。
+  斜体の割合は筆者の記事どうしのばらつきが大きく分けられないので入れていない。
 model_leaning:
   - tokens:
-      - basic_form: た
-      - basic_form: 瞬間
-    message: 「〜た瞬間」は筆者の記事では使わない。時間の前後関係をそのまま書く。
+      - basic_form: くれる
+      - basic_form: ます
+    message: 「〜してくれます」は筆者の記事ではほぼ使わない。道具や仕組みを主語にした言い方をやめ、何が起きるかを書く。
     evidence:
       author: 1
-      opus: 26
-      gemini: 70
-  - tokens:
-      - basic_form: ふと
-    message: 「ふと」は筆者の記事では使わない。消すか、きっかけを書く。
-    evidence:
-      author: 1
-      opus: 9
-      gemini: 14
-  - tokens:
-      - basic_form: 思わず
-    message: 「思わず」は筆者の記事では使わない。消すか、具体的な反応を書く。
-    evidence:
-      author: 1
-      opus: 8
-      gemini: 14
-  - tokens:
-      - basic_form: どこ
-      - basic_form: か
-    message: 「どこか」は筆者の記事ではほぼ使わない。場所なら具体的に書き、ぼかしなら消す。
-    evidence:
-      author: 2
-      opus: 46
-      gemini: 55
-
-author_leaning:
-  - tokens:
-      - basic_form: 大切
-    author: 重要
-    message: 筆者の記事では「大切」は少なく「重要」が多い。「大切にする」のように言い換えられない所はそのままでよい。
-    evidence:
-      author: 1
-      author_alternative: 30
-      opus: 23
-      gemini: 13
-  - tokens:
-      - basic_form: 推奨
-    author: おすすめ
-    evidence:
-      author: 2
-      author_alternative: 35
-      opus: 8
-      gemini: 15
-
+      opus: 22
+      gemini: 23
+author_leaning: []
 orthography:
+  - expected: 分か
+    pattern: /わか(?=[っらりるれ])/
   - expected: 全て
     pattern: すべて
-  - expected: 分か
-    pattern: /わか(?=[らりるれろっ])/
   - expected: 気付
-    pattern: 気づ
-  - expected: 様々
-    pattern: さまざま
-
+    pattern: /気づ(?=[いかきくけ])/
+  - expected: 既に
+    pattern: すでに
+  - expected: 全く
+    pattern: まったく
+  - expected: 繋が
+    pattern: /つなが(?=[っらりるれ])/
+  - expected: みなさん
+    pattern: 皆さん
+density:
+  - tokens:
+      - basic_form: か
+      - basic_form: 」
+    max_per_1000: 0.3
+    typical_per_1000: 0
+    message: 「〜か」」で終わるかぎかっこを減らす。問いをかぎかっこで見せず、地の文で書く。
+    evidence:
+      feature: か+」
+      author_max: 0.3
+      opus_fires: 19/44
+      gemini_fires: 17/49
+      in_brief_docs: 1
+  - tokens:
+      - basic_form: を
+      - basic_form: 、
+    max_per_1000: 0.7
+    typical_per_1000: 0
+    message: 「を」のあとの読点を減らす。
+    evidence:
+      feature: を+、
+      author_max: 0.6
+      opus_fires: 12/44
+      gemini_fires: 17/49
+      in_brief_docs: 8
+  - tokens:
+      - basic_form: の
+      - basic_form: 中
+    max_per_1000: 0.7
+    typical_per_1000: 0
+    message: 「〜の中」を減らす。「〜で」「〜には」で言えるならそうする。
+    evidence:
+      feature: の+中
+      author_max: 0.7
+      opus_fires: 11/44
+      gemini_fires: 16/49
+      in_brief_docs: 0
+  - tokens:
+      - basic_form: か
+      - basic_form: 。
+    max_per_1000: 0.9
+    typical_per_1000: 0
+    message: 「〜か。」で終わる問いかけを減らす。問いにするなら「〜か？」にする。
+    evidence:
+      feature: か+。
+      author_max: 0.8
+      opus_fires: 8/44
+      gemini_fires: 16/49
+      in_brief_docs: 0
+  - tokens:
+      - basic_form: 。
+      - basic_form: それ
+    max_per_1000: 0.6
+    typical_per_1000: 0
+    message: 「それ」で始まる文を減らす。前の文とつなげるか、指すものを書く。
+    evidence:
+      feature: 。+それ
+      author_max: 0.6
+      opus_fires: 9/44
+      gemini_fires: 7/49
+      in_brief_docs: 0
+  - tokens:
+      - pos: 名詞
+        basic_form: そのもの
+    max_per_1000: 0.7
+    typical_per_1000: 0
+    message: 「そのもの」を減らす。強調したいだけなら消す。
+    evidence:
+      feature: そのもの/名詞
+      author_max: 0.7
+      opus_fires: 10/44
+      gemini_fires: 7/49
+      in_brief_docs: 0
+  - tokens:
+      - pos: 名詞
+        basic_form: そこ
+    max_per_1000: 0.6
+    typical_per_1000: 0
+    message: 「そこ」を減らす。指す場所や事柄をそのまま書く。
+    evidence:
+      feature: そこ/名詞
+      author_max: 0.5
+      opus_fires: 6/44
+      gemini_fires: 12/49
+      in_brief_docs: 0
+  - tokens:
+      - basic_form: に
+      - basic_form: 、
+    max_per_1000: 1.5
+    typical_per_1000: 0.5
+    message: 「に」のあとの読点を減らす。
+    evidence:
+      feature: に+、
+      author_max: 1.5
+      opus_fires: 13/44
+      gemini_fires: 6/49
+      in_brief_docs: 15
+  - tokens:
+      - basic_form: する
+      - basic_form: 、
+    max_per_1000: 1.2
+    typical_per_1000: 0.2
+    message: 「〜し、」で文をつなぐのを減らす。文を切る。
+    evidence:
+      feature: する+、
+      author_max: 1.2
+      opus_fires: 5/44
+      gemini_fires: 26/49
+      in_brief_docs: 18
 thresholds:
   sentence_length: 253
   max_ten: 6
   bold_per_1000: 4
+  decoration_min_chars: 1500
   list_ratio: 0.46
-
+  bold_label_items: 0
+  density_min_chars: 1500
 allow: []

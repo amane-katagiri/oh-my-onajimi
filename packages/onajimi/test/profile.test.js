@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
-import { aggregate, compare, docFeatures, featuresOfMarkdown, isContentWord, logOddsZ, proposeModelLeaning, proposeRateDifferences, snippet } from "../src/profile.js";
+import { aggregate, compare, containsWord, docFeatures, docRates, featuresOfMarkdown, isContentWord, logOddsZ, proposeDensity, proposeModelLeaning, proposeRateDifferences, snippet } from "../src/profile.js";
+import { aggregateVariants, docVariants, isScriptVariant, prhEntry, proposeOrthography } from "../src/orthography.js";
 import { measureArticle, proposeThresholds } from "../src/stats.js";
 import { run } from "./helpers.js";
 import { makeCorpusRoot, post } from "./corpus-helpers.js";
@@ -67,7 +68,10 @@ test("the dictionary proposal takes only words the author almost never uses; fre
   });
   const rows = [row("た+。", 60, -14), row("すべて", 0, -3.3), row("わかる", 1, -2.5), row("それ", 41, -5.9), row("ふと", 1, -1.5)];
   const config = { proposal_z: -2, proposal_max_author_docs: 1, rate_z: -4, proposal_limit: 10 };
-  assert.deepEqual(proposeModelLeaning(rows, ["m"], config).map((entry) => entry.evidence.feature), ["すべて", "わかる"]);
+  rows[1].inBriefDocs = 2;
+  const proposal = proposeModelLeaning(rows, ["m"], config);
+  assert.deepEqual(proposal.model_leaning.map((entry) => entry.evidence.feature), ["わかる"]);
+  assert.deepEqual(proposal.excluded_in_brief.map((entry) => [entry.evidence.feature, entry.evidence.in_brief_docs]), [["すべて", 2]]);
   const rates = proposeRateDifferences(rows, ["m"], { author: { chars: 1000 }, m: { chars: 1000 } }, config);
   assert.deepEqual(rates.map((entry) => entry.feature), ["た+。", "それ"]);
   assert.deepEqual(rates[0].per_1000_chars, { author: 180, m: 30 });
@@ -83,7 +87,7 @@ test("article measures follow sentence-length, max-ten and decoration-density", 
 });
 
 test("proposed thresholds are not exceeded by any article; stricter ones are the 90th percentile", () => {
-  const articles = Array.from({ length: 10 }, (_, i) => ({ sentence_length: 50 + i, max_ten: i % 4, bold_per_1000: i * 0.33, list_ratio: i * 0.031, lengths: [], tens: [] }));
+  const articles = Array.from({ length: 10 }, (_, i) => ({ sentence_length: 50 + i, max_ten: i % 4, bold_per_1000: i * 0.33, list_ratio: i * 0.031, proseChars: 2000, bold_label_items: 0, marks: 0, emphasis_share: null, lengths: [], tens: [] }));
   const result = proposeThresholds(articles);
   assert.equal(result.sentence_length.proposed, 59);
   assert.equal(result.sentence_length.stricter, 58);
@@ -96,7 +100,8 @@ test("proposed thresholds are not exceeded by any article; stricter ones are the
 test("profile writes candidates, a proposal and thresholds from cached controls", () => {
   const body = (extra) => `# 見出し\n\n今日は動作を${extra}。結果を書いた。\n`;
   const { root } = makeCorpusRoot({
-    a: post({ title: "A", date: "2021-01-01", body: body("確かめた") }),
+    lily1: post({ title: "L", date: "2021-02-01", category: "lily", body: "動作を確認した。確認した。確認した。確認した。\n" }),
+    a: post({ title: "A", date: "2021-01-01", aiSummary: "徹底的に調べた。", body: body("確かめた") }),
     b: post({ title: "B", date: "2021-01-02", body: body("確かめた") }),
     c: post({ title: "C", date: "2021-01-03", body: body("確かめた") }),
     d: post({ title: "D", date: "2021-01-04", body: body("確かめた") }),
@@ -109,7 +114,7 @@ test("profile writes candidates, a proposal and thresholds from cached controls"
   }
   const result = run(["profile", "--root", root, "--author", "demo"]);
   assert.equal(result.code, 0, result.stderr);
-  assert.match(result.stdout, /author 3 本 \d+ 字、fake 2 本/u);
+  assert.match(result.stdout, /author 3 本 \d+ 字、author_other 1 本 \d+ 字、fake 2 本/u);
   const out = path.join(root, "authors/demo/profile");
   const [header, ...rows] = fs.readFileSync(path.join(out, "candidates.tsv"), "utf8").trimEnd().split("\n");
   const columns = header.split("\t");
@@ -122,11 +127,107 @@ test("profile writes candidates, a proposal and thresholds from cached controls"
   assert.equal(field(kakunin, "surfaces"), "確認し");
   const proposal = YAML.parse(fs.readFileSync(path.join(out, "proposal.yml"), "utf8"));
   assert.ok(proposal.model_leaning.some((entry) => entry.evidence.feature === "確認+する"));
-  assert.deepEqual(Object.keys(proposal.thresholds), ["sentence_length", "max_ten", "bold_per_1000", "list_ratio"]);
+  assert.deepEqual(Object.keys(proposal.thresholds), [
+    "sentence_length",
+    "max_ten",
+    "bold_per_1000",
+    "list_ratio",
+    "decoration_min_chars",
+    "bold_label_items",
+    "emphasis_share_min",
+    "emphasis_min_marks",
+    "density_min_chars",
+    "emphasis_share_typical",
+  ]);
+  assert.match(result.stdout, /author_other 1 本/u);
+  assert.equal(field(kakunin, "in_brief_docs"), "0");
+  assert.ok(Number(field(kakunin, "author_other_per_1000")) > 0);
+  assert.equal(field(kakunin, "author_next"), "");
+  assert.match(field(kakunin, "control_next"), /^た\/助動詞 4$/u);
+  const kakuninEntry = proposal.model_leaning.find((entry) => entry.evidence.feature === "確認+する");
+  assert.match(kakuninEntry.note, /他のカテゴリー/u);
+  assert.equal(kakuninEntry.evidence.control_next, "た/助動詞 4");
+  assert.ok(proposal.excluded_in_brief.some((entry) => entry.evidence.feature === "徹底的/名詞" && entry.evidence.in_brief_docs === 1));
+  assert.equal(proposal.model_leaning.some((entry) => entry.evidence.feature === "徹底的/名詞"), false);
   assert.ok(fs.existsSync(path.join(out, "thresholds.yml")));
   assert.ok(full.length > rows.length + 1);
   for (const row of rows) {
     const z = row.split("\t").slice(2, 6).filter(Boolean).map(Number);
     assert.ok(z.some((value) => Math.abs(value) >= 2), row);
   }
+});
+
+test("bold thresholds count only articles with enough prose; bold labels and emphasis share are measured", async () => {
+  const articles = [
+    { sentence_length: 1, max_ten: 1, bold_per_1000: 30, list_ratio: 0, proseChars: 29, bold_label_items: 0, marks: 4, emphasis_share: 0.25, lengths: [], tens: [] },
+    { sentence_length: 1, max_ten: 1, bold_per_1000: 1.2, list_ratio: 0, proseChars: 3000, bold_label_items: 0, marks: 10, emphasis_share: 0.6, lengths: [], tens: [] },
+    { sentence_length: 1, max_ten: 1, bold_per_1000: 0.5, list_ratio: 0, proseChars: 2000, bold_label_items: 0, marks: 2, emphasis_share: 0, lengths: [], tens: [] },
+  ];
+  const control = [{ sentence_length: 1, max_ten: 1, bold_per_1000: 9, list_ratio: 0, proseChars: 2000, bold_label_items: 3, marks: 6, emphasis_share: 0, lengths: [], tens: [] }];
+  const result = proposeThresholds(articles, { minChars: 1500, minMarks: 3, controls: { m: control } });
+  assert.equal(result.bold_per_1000.proposed, 1.2);
+  assert.equal(result.bold_label_items.proposed, 0);
+  assert.equal(result.emphasis_share_min.proposed, 0.25);
+  assert.equal(result.emphasis_share_min.p50, 0.25);
+  assert.equal(result.decoration_min_chars.proposed, 1500);
+  assert.deepEqual(result.controls.m.bold_label_items, { articles: 1, p50: 3, max: 3, fires: 1, fires_stricter: 1 });
+  assert.equal(result.controls.m.emphasis_share_min.fires, 1);
+
+  const measure = await measureArticle(["- **速さ**: 速い", "- **軽さ：** 軽い", "- **太字**だけ", "- ふつう: 説明", "", "*斜体*と**太字**。", "", "> - **引用**: 数えない", ""].join("\n"));
+  assert.equal(measure.bold_label_items, 2);
+  assert.deepEqual(measure.boldLabels.map((at) => at.line), [1, 2]);
+  assert.equal(measure.marks, 5);
+  assert.equal(measure.emphasis_share, 0.2);
+});
+
+test("orthography groups script variants by reading and part of speech and writes prh entries", async () => {
+  const side = async (texts) => {
+    const docs = [];
+    for (const [i, text] of texts.entries()) {
+      const { strTokens } = await featuresOfMarkdown(text);
+      docs.push(docVariants(`d${i}`, strTokens));
+    }
+    return aggregateVariants(docs);
+  };
+  const author = await side(["話が分かった。意味が分からない。全て読んだ。", "やっと分かる。全て終わった。その方がいい。その方が早い。機会がある。", "全てを見た。分かりやすい。その方が楽だ。機会を待つ。機会が来た。"]);
+  const model = await side(["話がわかった。意味がわからない。すべて読んだ。そのほうがいい。", "やっとわかる。すべて終わった。そのほうが早い。機械がある。", "すべてを見た。わかりやすい。すべてだ。そのほうが楽だ。機械を待つ。機械が来た。"]);
+  const params = { orthography_min_count: 3, orthography_min_share: 0.8, orthography_z: 1, orthography_limit: 10 };
+  const result = await proposeOrthography(author, { m: model }, params);
+  const pairs = result.orthography.map((entry) => [entry.expected, entry.pattern]);
+  assert.deepEqual(pairs.sort(), [["全て", "すべて"], ["分か", "/わか(?=[っらりる])/"]]);
+  const wakaru = result.orthography.find((entry) => entry.expected === "分か");
+  assert.equal(wakaru.evidence.author["分かる"], 4);
+  assert.equal(wakaru.evidence.control.m["わかる"], 4);
+  assert.ok(wakaru.evidence.author_example.length > 0);
+  assert.deepEqual(result.orthography_review.map((entry) => [entry.expected, entry.pattern]), [["方", "ほう"]]);
+  assert.match(result.orthography_review[0].check.join(), /1 字の漢字/u);
+  assert.equal([...result.orthography, ...result.orthography_review].some((entry) => /機/u.test(entry.expected)), false);
+  assert.equal(isScriptVariant("気付く", "気づく"), true);
+  assert.equal(isScriptVariant("機会", "機械"), false);
+  assert.deepEqual(prhEntry("様々", "さまざま", ["さまざま"]), { expected: "様々", pattern: "さまざま" });
+  assert.deepEqual(prhEntry("気付く", "気づく", ["気づい", "気づか"]), { expected: "気付", pattern: "/気づ(?=[いかく])/" });
+});
+
+test("density proposals take a threshold no long-enough profile article exceeds", async () => {
+  const docOf = async (id, text) => ({ id, ...(await featuresOfMarkdown(text)) });
+  const filler = "今日は晴れていたので散歩に出かけて公園を一周してから家に帰ってきた";
+  const authorDocs = [await docOf("a1", `${filler}と思う。${filler}。`), await docOf("a2", `${filler}。${filler}。`), await docOf("short", "思う。思う。思う。")];
+  const controlDocs = { m: [await docOf("c1", `${filler}と思う。${filler}と思う。と思う。`), await docOf("c2", `${filler}。${filler}。`)] };
+  const rate = { feature: "思う/動詞", tokens: [{ pos: "動詞", basic_form: "思う" }], evidence: { in_brief_docs: 0 } };
+  const [entry] = proposeDensity([rate], authorDocs, controlDocs, { min_chars: 40 });
+  const authorRates = docRates(authorDocs, rate.tokens, 40);
+  assert.equal(authorRates.length, 2);
+  assert.ok(authorRates.every((value) => value <= entry.max_per_1000));
+  assert.equal(entry.min_chars, 40);
+  assert.equal(entry.evidence.control.m.fires, 1);
+  assert.equal(entry.evidence.author_articles, 2);
+  assert.match(entry.message, /「思う」が多い/u);
+});
+
+test("brief matching ignores a surface that is only part of a longer kanji or katakana word", () => {
+  assert.equal(containsWord("ブログ記事を書いて", "ログ"), false);
+  assert.equal(containsWord("本文だけを出力", "本"), false);
+  assert.equal(containsWord("新しい方式を試みた。", "試み"), true);
+  assert.equal(containsWord("ログを見る", "ログ"), true);
+  assert.equal(containsWord("この本は", "本"), true);
 });

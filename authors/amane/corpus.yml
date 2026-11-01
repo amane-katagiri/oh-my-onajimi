@@ -8,6 +8,7 @@ select:
   since: 2020-01-01
 
 test_ratio: 0.25
+dev_ratio: 0.11
 
 exclude_sections:
   - post: my-2025

@@ -3,8 +3,23 @@ import path from "node:path";
 import YAML from "yaml";
 import { authorDir, generatedDir } from "./paths.js";
 
-const TOP_LEVEL_KEYS = new Set(["note", "model_leaning", "author_leaning", "orthography", "thresholds", "allow"]);
-const THRESHOLD_KEYS = new Set(["sentence_length", "max_ten", "bold_per_1000", "list_ratio"]);
+const TOP_LEVEL_KEYS = new Set(["note", "model_leaning", "author_leaning", "orthography", "density", "thresholds", "allow"]);
+const POSITIVE = (value) => value > 0;
+const NON_NEGATIVE = (value) => value >= 0;
+const SHARE = (value) => value >= 0 && value <= 1;
+const THRESHOLDS = {
+  sentence_length: [POSITIVE, "正の数"],
+  max_ten: [POSITIVE, "正の数"],
+  bold_per_1000: [POSITIVE, "正の数"],
+  list_ratio: [POSITIVE, "正の数"],
+  decoration_min_chars: [NON_NEGATIVE, "0 以上の数"],
+  bold_label_items: [(value) => Number.isInteger(value) && value >= 0, "0 以上の整数"],
+  emphasis_share_min: [SHARE, "0 以上 1 以下の数"],
+  emphasis_share_typical: [SHARE, "0 以上 1 以下の数"],
+  emphasis_min_marks: [NON_NEGATIVE, "0 以上の数"],
+  density_min_chars: [NON_NEGATIVE, "0 以上の数"],
+};
+const THRESHOLD_KEYS = new Set(Object.keys(THRESHOLDS));
 const PRH_KEYS = new Set(["expected", "pattern", "patterns", "regexpMustEmpty", "specs", "options", "prh"]);
 
 const fail = (where, problem) => {
@@ -48,7 +63,7 @@ export const parseProfile = (text) => {
 
   const modelLeaning = asList(profile, "model_leaning").map((entry, index) => {
     const where = `model_leaning[${index}]`;
-    checkKeys(where, entry, new Set(["tokens", "message", "evidence"]));
+    checkKeys(where, entry, new Set(["tokens", "message", "note", "evidence"]));
     if (typeof entry.message !== "string" || entry.message === "") {
       fail(where, "message が要る");
     }
@@ -57,7 +72,7 @@ export const parseProfile = (text) => {
 
   const authorLeaning = asList(profile, "author_leaning").map((entry, index) => {
     const where = `author_leaning[${index}]`;
-    checkKeys(where, entry, new Set(["tokens", "author", "message", "evidence"]));
+    checkKeys(where, entry, new Set(["tokens", "author", "message", "note", "evidence"]));
     if (typeof entry.author !== "string" || entry.author === "") {
       fail(where, "author（筆者側の言い方）が要る");
     }
@@ -82,10 +97,35 @@ export const parseProfile = (text) => {
   const thresholds = profile.thresholds ?? {};
   checkKeys("thresholds", thresholds, THRESHOLD_KEYS);
   for (const [key, value] of Object.entries(thresholds)) {
-    if (typeof value !== "number" || !(value > 0)) {
-      fail(`thresholds.${key}`, "正の数で書く");
+    const [valid, expected] = THRESHOLDS[key];
+    if (typeof value !== "number" || !valid(value)) {
+      fail(`thresholds.${key}`, `${expected}で書く`);
     }
   }
+
+  const density = asList(profile, "density").map((entry, index) => {
+    const where = `density[${index}]`;
+    checkKeys(where, entry, new Set(["tokens", "max_per_1000", "min_chars", "typical_per_1000", "message", "note", "evidence"]));
+    if (typeof entry.message !== "string" || entry.message === "") {
+      fail(where, "message が要る");
+    }
+    for (const key of ["max_per_1000", "min_chars", "typical_per_1000"]) {
+      if (entry[key] !== undefined && (typeof entry[key] !== "number" || entry[key] < 0)) {
+        fail(`${where}.${key}`, "0 以上の数で書く");
+      }
+    }
+    if (entry.max_per_1000 === undefined) {
+      fail(where, "max_per_1000 が要る");
+    }
+    const minChars = entry.min_chars ?? thresholds.density_min_chars;
+    return {
+      tokens: checkTokens(where, entry.tokens),
+      max_per_1000: entry.max_per_1000,
+      ...(minChars === undefined ? {} : { min_chars: minChars }),
+      ...(entry.typical_per_1000 === undefined ? {} : { typical_per_1000: entry.typical_per_1000 }),
+      message: entry.message,
+    };
+  });
 
   const allow = asList(profile, "allow");
   allow.forEach((value, index) => {
@@ -94,26 +134,38 @@ export const parseProfile = (text) => {
     }
   });
 
-  return { modelLeaning, authorLeaning, orthography, thresholds, allow };
+  return { modelLeaning, authorLeaning, orthography, density, thresholds, allow };
 };
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
-const textlintrc = ({ thresholds, allow }) => {
+const DECORATION_OPTIONS = {
+  bold_per_1000: "maxBoldPer1000",
+  list_ratio: "maxListRatio",
+  decoration_min_chars: "minChars",
+  bold_label_items: "maxBoldLabelItems",
+  emphasis_share_min: "minEmphasisShare",
+  emphasis_min_marks: "minEmphasisMarks",
+  emphasis_share_typical: "typicalEmphasisShare",
+};
+
+const textlintrc = ({ thresholds, allow, density }) => {
   const leaning = (file) => ({
     dictionaryPath: `./${file}`,
     dictionaryMode: "override",
     ...(allow.length > 0 ? { allows: allow } : {}),
   });
-  const decoration = {
-    ...(thresholds.bold_per_1000 !== undefined ? { maxBoldPer1000: thresholds.bold_per_1000 } : {}),
-    ...(thresholds.list_ratio !== undefined ? { maxListRatio: thresholds.list_ratio } : {}),
-  };
+  const decoration = Object.fromEntries(
+    Object.entries(DECORATION_OPTIONS)
+      .filter(([key]) => thresholds[key] !== undefined)
+      .map(([key, option]) => [option, thresholds[key]]),
+  );
   const rules = {
     "preset-onajimi": {
       "model-leaning": leaning("model-leaning.json"),
       "author-leaning": { severity: "warning", ...leaning("author-leaning.json") },
       "decoration-density": { severity: "warning", ...decoration },
+      ...(density.length > 0 ? { "phrase-density": { severity: "warning", entries: density } } : {}),
     },
     prh: { severity: "warning", rulePaths: ["./orthography.yml"] },
   };

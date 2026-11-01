@@ -1,7 +1,7 @@
 import { tokenize } from "kuromojin";
 import { splitAST, SentenceSplitterSyntax } from "sentence-splitter";
 import { StringSource } from "textlint-util-to-string";
-import { parseMarkdown } from "./prose.js";
+import { nodeText, parseMarkdown } from "./prose.js";
 
 const TEN_SEPARATORS = ["?", "!", "？", "！", "。"];
 
@@ -57,8 +57,22 @@ const maxTenInSentence = async (sentence) => {
   return max;
 };
 
+const COLON_END = /[:：]\s*$/u;
+const COLON_START = /^\s*[:：]/u;
+
+export const isBoldLabelItem = (item) => {
+  const paragraph = item.children?.[0];
+  const [first, second] = paragraph?.type === "Paragraph" ? paragraph.children : [];
+  if (first?.type !== "Strong") {
+    return false;
+  }
+  return COLON_END.test(nodeText(first)) || (second?.type === "Str" && COLON_START.test(second.value));
+};
+
 export const measureArticle = async (markdown) => {
   const lengths = [];
+  const boldLabels = [];
+  let emphasis = 0;
   const tens = [];
   const paragraphs = [];
   let proseChars = 0;
@@ -72,6 +86,12 @@ export const measureArticle = async (markdown) => {
     const listHere = inList || node.type === "List";
     if (node.type === "Strong" && !skipHere) {
       bold += 1;
+    }
+    if (node.type === "Emphasis" && !skipHere) {
+      emphasis += 1;
+    }
+    if (node.type === "ListItem" && !skipHere && isBoldLabelItem(node)) {
+      boldLabels.push({ line: node.loc.start.line, column: node.loc.start.column + 1 });
     }
     if (node.type === "Str" && !skipHere) {
       const length = [...node.value.replace(/\s/gu, "")].length;
@@ -99,6 +119,10 @@ export const measureArticle = async (markdown) => {
     max_ten: Math.max(0, ...tens),
     bold_per_1000: proseChars === 0 ? 0 : round((bold / proseChars) * 1000, 1),
     list_ratio: proseChars === 0 ? 0 : round(listChars / proseChars, 2),
+    bold_label_items: boldLabels.length,
+    boldLabels,
+    marks: bold + emphasis,
+    emphasis_share: bold + emphasis === 0 ? null : round(emphasis / (bold + emphasis), 2),
   };
 };
 
@@ -110,29 +134,60 @@ export const percentile = (values, p) => {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1))];
 };
 
-const UNITS = { sentence_length: 1, max_ten: 1, bold_per_1000: 0.1, list_ratio: 0.01 };
-
-const ceilTo = (value, unit) => {
+const ceilTo = (value, unit, floor = unit) => {
   const digits = unit === 1 ? 0 : String(unit).split(".")[1].length;
-  return Math.max(unit, round(Math.ceil(round(value / unit, 6)) * unit, digits));
+  return Math.max(floor, round(Math.ceil(round(value / unit, 6)) * unit, digits));
 };
 
-export const proposeThresholds = (articles, { strictP = 0.9 } = {}) => {
+const floorTo = (value, unit) => {
+  const digits = unit === 1 ? 0 : String(unit).split(".")[1].length;
+  return Math.max(0, round(Math.floor(round(value / unit, 6)) * unit, digits));
+};
+
+export { ceilTo };
+
+const SPECS = {
+  sentence_length: { unit: 1 },
+  max_ten: { unit: 1 },
+  bold_per_1000: { unit: 0.1, needsChars: true },
+  list_ratio: { unit: 0.01 },
+  bold_label_items: { unit: 1, floor: 0 },
+  emphasis_share_min: { unit: 0.01, lower: true, value: "emphasis_share", needsMarks: true },
+};
+
+const valuesOf = (articles, key, { needsChars, needsMarks, value = key }, { minChars, minMarks }) =>
+  articles
+    .filter((article) => (!needsChars || article.proseChars >= minChars) && (!needsMarks || article.marks >= minMarks))
+    .map((article) => article[value])
+    .filter((v) => typeof v === "number");
+
+const breaks = (spec, value, limit) => (spec.lower ? value < limit : value > limit);
+
+export const proposeThresholds = (articles, { strictP = 0.9, minChars = 0, minMarks = 3, controls = {} } = {}) => {
   const result = { articles: articles.length };
-  for (const [key, unit] of Object.entries(UNITS)) {
-    const values = articles.map((article) => article[key]);
-    const proposed = ceilTo(Math.max(0, ...values), unit);
-    const stricter = ceilTo(percentile(values, strictP) ?? 0, unit);
+  const gates = { minChars, minMarks };
+  for (const [key, spec] of Object.entries(SPECS)) {
+    const values = valuesOf(articles, key, spec, gates);
+    if (values.length === 0) {
+      result[key] = { articles: 0, proposed: null };
+      continue;
+    }
+    const proposed = spec.lower ? floorTo(Math.min(...values), spec.unit) : ceilTo(Math.max(...values), spec.unit, spec.floor);
+    const stricter = spec.lower ? floorTo(percentile(values, 1 - strictP), spec.unit) : ceilTo(percentile(values, strictP), spec.unit, spec.floor);
     result[key] = {
+      articles: values.length,
       p50: percentile(values, 0.5),
-      p90: percentile(values, 0.9),
-      p95: percentile(values, 0.95),
-      max: Math.max(0, ...values),
+      p90: percentile(values, spec.lower ? 0.1 : 0.9),
+      p95: percentile(values, spec.lower ? 0.05 : 0.95),
+      [spec.lower ? "min" : "max"]: spec.lower ? Math.min(...values) : Math.max(...values),
       proposed,
       stricter,
-      stricter_exceeds: values.filter((value) => value > stricter).length,
+      stricter_exceeds: values.filter((value) => breaks(spec, value, stricter)).length,
     };
   }
+  result.decoration_min_chars = { proposed: minChars };
+  result.density_min_chars = { proposed: minChars };
+  result.emphasis_min_marks = { proposed: minMarks };
   const lengths = articles.flatMap((article) => article.lengths);
   const tens = articles.flatMap((article) => article.tens);
   result.sentences = {
@@ -144,5 +199,29 @@ export const proposeThresholds = (articles, { strictP = 0.9 } = {}) => {
     ten_p90: percentile(tens, 0.9),
     ten_p99: percentile(tens, 0.99),
   };
+  if (Object.keys(controls).length > 0) {
+    result.controls = Object.fromEntries(
+      Object.entries(controls).map(([runner, docs]) => [
+        runner,
+        Object.fromEntries(
+          Object.entries(SPECS).map(([key, spec]) => {
+            const values = valuesOf(docs, key, spec, gates);
+            const limit = result[key].proposed;
+            const strict = result[key].stricter;
+            return [
+              key,
+              {
+                articles: values.length,
+                p50: percentile(values, 0.5),
+                [spec.lower ? "min" : "max"]: values.length === 0 ? null : spec.lower ? Math.min(...values) : Math.max(...values),
+                fires: limit === null ? null : values.filter((value) => breaks(spec, value, limit)).length,
+                fires_stricter: limit === null ? null : values.filter((value) => breaks(spec, value, strict)).length,
+              },
+            ];
+          }),
+        ),
+      ]),
+    );
+  }
   return result;
 };

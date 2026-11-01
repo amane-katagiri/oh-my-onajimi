@@ -5,6 +5,7 @@
   "main": "index.js",
   "type": "commonjs",
   "dependencies": {
+    "kuromojin": "3.0.1",
     "textlint-rule-preset-ai-words-ja": "1.2.1"
   },
   "devDependencies": {

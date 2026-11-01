@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { corpusPaths, loadCorpus } from "./corpus.js";
+import { SETS, corpusPaths, loadCorpus } from "./corpus.js";
 import { createAuthorLinter } from "./lint.js";
 import { analyzeProse, parseMarkdown, stripTitle } from "./prose.js";
 
@@ -25,45 +25,62 @@ const quotedLines = (markdown) => {
 
 const ruleName = (ruleId) => (ruleId === "prh" ? "orthography" : ruleId.replace(/^onajimi\//u, ""));
 
+export const lintDoc = async (lintText, doc) => {
+  const skip = quotedLines(doc.text);
+  const lines = doc.text.split("\n");
+  const messages = await lintText(doc.text, `${doc.slug}.md`);
+  const findings = messages
+    .filter((message) => !skip.has(message.line))
+    .sort((a, b) => a.line - b.line || a.column - b.column)
+    .map((message) => ({
+      slug: doc.slug,
+      line: message.line,
+      column: message.column,
+      rule: ruleName(message.ruleId),
+      message: message.message.replace(/\s*\n\s*/gu, " "),
+      text: (lines[message.line - 1] ?? "").trim(),
+    }));
+  return { findings, quoted: messages.length - findings.length };
+};
+
 export const scoreDocs = async (lintText, docs, options) => {
   const byRule = {};
   let findings = 0;
   let quoted = 0;
   let chars = 0;
   for (const doc of docs) {
-    const skip = quotedLines(doc.text);
-    const messages = await lintText(doc.text, `${doc.slug}.md`);
-    for (const message of messages) {
-      if (skip.has(message.line)) {
-        quoted += 1;
-        continue;
-      }
-      findings += 1;
-      const name = ruleName(message.ruleId);
-      byRule[name] = (byRule[name] ?? 0) + 1;
+    const result = await lintDoc(lintText, doc);
+    quoted += result.quoted;
+    findings += result.findings.length;
+    for (const { rule } of result.findings) {
+      byRule[rule] = (byRule[rule] ?? 0) + 1;
     }
     chars += analyzeProse(doc.text, options).chars;
   }
   return { docs: docs.length, chars, findings, quoted, per1000: chars === 0 ? null : (findings / chars) * 1000, byRule };
 };
 
+export const authorDocsOf = (posts) => posts.map((post) => ({ slug: post.slug, text: stripTitle(post.text, post.meta) }));
+
+export const controlDocsOf = (root, author, runner, posts) => {
+  const dir = path.join(corpusPaths(root, author).control, runner);
+  return posts
+    .map((post) => ({ post, file: path.join(dir, `${post.slug}.md`) }))
+    .filter(({ file }) => fs.existsSync(file))
+    .map(({ post, file }) => ({ slug: post.slug, text: stripTitle(fs.readFileSync(file, "utf8"), post.meta) }));
+};
+
 export const runEval = async ({ root, author, set = "test" }) => {
   const corpus = loadCorpus(root, author);
   const options = { skipParagraphs: corpus.config.skipParagraphs };
   const lintText = await createAuthorLinter(root, author);
-  const posts = corpus[set];
-  if (!posts) {
-    throw new Error("--set は profile か test");
+  if (!SETS.includes(set)) {
+    throw new Error(`--set は ${SETS.join("・")} のどれか`);
   }
-  const authorDocs = posts.map((post) => ({ slug: post.slug, text: stripTitle(post.text, post.meta) }));
-  const rows = [{ label: `誤検出: 筆者 ${set}`, ...(await scoreDocs(lintText, authorDocs, options)) }];
+  const posts = corpus[set];
+  const rows = [{ label: `誤検出: 筆者 ${set}`, ...(await scoreDocs(lintText, authorDocsOf(posts), options)) }];
   for (const runner of Object.keys(corpus.config.control.runners)) {
-    const dir = path.join(corpusPaths(root, author).control, runner);
-    const docs = posts
-      .map((post) => ({ post, file: path.join(dir, `${post.slug}.md`) }))
-      .filter(({ file }) => fs.existsSync(file))
-      .map(({ post, file }) => ({ slug: post.slug, text: stripTitle(fs.readFileSync(file, "utf8"), post.meta) }));
-    rows.push({ label: `検出: ${runner} ${set}`, ...(await scoreDocs(lintText, docs, options)) });
+    rows.push({ label: `検出: ${runner} ${set}`, ...(await scoreDocs(lintText, controlDocsOf(root, author, runner, posts), options)) });
   }
   return rows;
 };

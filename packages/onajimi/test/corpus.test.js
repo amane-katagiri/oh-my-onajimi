@@ -24,7 +24,29 @@ test("the newest quarter goes to test", () => {
   const posts = ["2020-01-05", "2020-01-01", "2020-01-04", "2020-01-02", "2020-01-03"].map((date, i) =>
     parsePost(`p${i}`, post({ title: "t", date, body: "本文。" })),
   );
-  assert.deepEqual(splitByDate(posts, 0.25), { profile: ["p1", "p3", "p4"], test: ["p2", "p0"] });
+  assert.deepEqual(splitByDate(posts, 0.25), { profile: ["p1", "p3", "p4"], dev: [], test: ["p2", "p0"] });
+});
+
+test("dev takes the newest part of the profile side and leaves test as it was", () => {
+  const posts = Array.from({ length: 20 }, (_, i) => parsePost(`p${String(i).padStart(2, "0")}`, post({ title: "t", date: `2020-02-${String(i + 1).padStart(2, "0")}`, body: "本文。" })));
+  const without = splitByDate(posts, 0.25);
+  const withDev = splitByDate(posts, 0.25, 0.1);
+  assert.deepEqual(withDev.test, without.test);
+  assert.deepEqual(withDev.dev, ["p13", "p14"]);
+  assert.deepEqual([...withDev.profile, ...withDev.dev], without.profile);
+});
+
+test("fenced YAML frontmatter is read as metadata", () => {
+  const parsed = parsePost("y", "---\ntitle: 題\ndate: 2021-01-01T10:00:00+09:00\ntags: [a, b]\n---\n\n本文。\n");
+  assert.deepEqual(parsed.meta, { title: "題", date: "2021-01-01T10:00:00+09:00" });
+});
+
+test("the selection keys are optional, and unknown profile keys are rejected", () => {
+  const all = parseCorpusConfig("posts: ~/blog/posts\n");
+  assert.deepEqual(all.select, { author: undefined, categories: undefined, since: "" });
+  assert.equal(all.posts, "~/blog/posts");
+  assert.throws(() => parseCorpusConfig("profile:\n  nope: 1\n"), /profile: 知らないキー nope/u);
+  assert.throws(() => parseCorpusConfig("test_ratio: 0.5\ndev_ratio: 0.5\n"), /dev_ratio/u);
 });
 
 test("an excluded section is cut from its heading to the end", () => {
@@ -78,9 +100,26 @@ test("split writes split.yml once and corpus reports the sets", () => {
   const { root } = makeCorpusRoot(posts);
   const first = run(["split", "--root", root, "--author", "demo"]);
   assert.equal(first.code, 0, first.stderr);
-  assert.equal(first.stdout, "profile 3 本、test 1 本\n");
+  assert.equal(first.stdout, "profile 3 本、dev 0 本、test 1 本\n");
   const split = YAML.parse(fs.readFileSync(path.join(root, "authors/demo/split.yml"), "utf8"));
-  assert.deepEqual(split, { profile: ["p0", "p1", "p2"], test: ["p3"] });
+  assert.deepEqual(split, { profile: ["p0", "p1", "p2"], dev: [], test: ["p3"] });
   assert.equal(run(["split", "--root", root, "--author", "demo"]).code, 2);
-  assert.match(run(["corpus", "--root", root, "--author", "demo"]).stdout, /^profile\t3 本\t15 字\t2021-01-01〜2021-01-03\ntest\t1 本\t5 字/u);
+  assert.match(run(["corpus", "--root", root, "--author", "demo"]).stdout, /^profile\t3 本\t15 字\t2021-01-01〜2021-01-03\ndev\t0 本\t0 字\ntest\t1 本\t5 字/u);
+});
+
+test("split with a dev ratio writes three sets and eval --set dev reads the dev posts", () => {
+  const posts = {};
+  for (let i = 0; i < 8; i += 1) {
+    posts[`p${i}`] = post({ title: `t${i}`, date: `2021-01-0${i + 1}`, body: "本文です。" });
+  }
+  const { root } = makeCorpusRoot(posts, { devRatio: 0.25 });
+  assert.equal(run(["split", "--root", root, "--author", "demo"]).stdout, "profile 4 本、dev 2 本、test 2 本\n");
+  const split = YAML.parse(fs.readFileSync(path.join(root, "authors/demo/split.yml"), "utf8"));
+  assert.deepEqual(split, { profile: ["p0", "p1", "p2", "p3"], dev: ["p4", "p5"], test: ["p6", "p7"] });
+  run(["build", "--root", root, "--author", "demo"]);
+  const dev = run(["eval", "--root", root, "--author", "demo", "--set", "dev"]);
+  assert.equal(dev.code, 0, dev.stderr);
+  assert.match(dev.stdout, /\| 誤検出: 筆者 dev \| 2 \|/u);
+  assert.match(run(["eval", "--root", root, "--author", "demo"]).stdout, /誤検出: 筆者 test/u);
+  assert.equal(run(["eval", "--root", root, "--author", "demo", "--set", "nope"]).code, 2);
 });

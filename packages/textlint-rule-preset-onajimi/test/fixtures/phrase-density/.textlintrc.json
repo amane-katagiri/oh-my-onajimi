@@ -1,0 +1,17 @@
+{
+  "rules": {
+    "preset-onajimi": {
+      "phrase-density": {
+        "entries": [
+          {
+            "tokens": [{ "pos": "動詞", "basic_form": "思う" }],
+            "max_per_1000": 20,
+            "min_chars": 60,
+            "typical_per_1000": 4,
+            "message": "「思う」が多い。"
+          }
+        ]
+      }
+    }
+  }
+}

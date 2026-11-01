@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { buildBrief, renderPrompt } from "./brief.js";
-import { corpusPaths, loadCorpus } from "./corpus.js";
+import { SETS, corpusPaths, loadCorpus } from "./corpus.js";
 
 export class RateLimitError extends Error {}
 export class UnavailableError extends Error {}
@@ -185,10 +185,10 @@ export const runControl = async ({ root, author, runner: name, set = "profile", 
   if (!runner) {
     throw new Error(`corpus.yml の control.runners に ${name} がない`);
   }
-  const pool = set === "all" ? [...corpus.profile, ...corpus.test] : corpus[set];
-  if (!pool) {
-    throw new Error(`--set は profile・test・all のどれか`);
+  if (set !== "all" && !SETS.includes(set)) {
+    throw new Error(`--set は ${SETS.join("・")}・all のどれか`);
   }
+  const pool = set === "all" ? SETS.flatMap((name) => corpus[name]) : corpus[set];
   let posts = pool;
   if (only) {
     const bySlug = new Map(pool.map((post) => [post.slug, post]));
@@ -199,9 +199,6 @@ export const runControl = async ({ root, author, runner: name, set = "profile", 
       }
       return post;
     });
-  }
-  if (limit !== undefined) {
-    posts = posts.slice(0, limit);
   }
   const { timeoutSeconds, retryDelaysSeconds } = corpus.config.control;
   const delay = (delaySeconds ?? corpus.config.control.delaySeconds) * 1000;
@@ -223,6 +220,9 @@ export const runControl = async ({ root, author, runner: name, set = "profile", 
       }
       summary.stale.push(post.slug);
       log(`${name} ${post.slug} はプロンプトが変わったので作り直す`);
+    }
+    if (limit !== undefined && summary.generated.length + summary.failed.length >= limit) {
+      break;
     }
     if (!first && delay > 0) {
       await sleep(delay);
