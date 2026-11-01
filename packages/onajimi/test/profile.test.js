@@ -208,6 +208,42 @@ test("orthography groups script variants by reading and part of speech and write
   assert.deepEqual(prhEntry("気付く", "気づく", ["気づい", "気づか"]), { expected: "気付", pattern: "/気づ(?=[いかく])/" });
 });
 
+test("katakana words split by the tokenizer do not form orthography pairs", async () => {
+  const side = async (texts) => {
+    const docs = [];
+    for (const [i, text] of texts.entries()) {
+      const { strTokens } = await featuresOfMarkdown(text);
+      docs.push(docVariants(`d${i}`, strTokens));
+    }
+    return aggregateVariants(docs);
+  };
+  const author = await side(["オタクくんが来た。オタクくんは寝た。", "オタクくんと話した。オタクくんの本。", "オタクくんも笑った。"]);
+  const model = await side(["トークンを発行する。トークンが漏れた。", "トークンを消す。トークンの一覧。", "トークンだけを見る。"]);
+  assert.equal(model.get("クン/名詞"), undefined);
+  const params = { orthography_min_count: 3, orthography_min_share: 0.8, orthography_z: 1, orthography_limit: 10 };
+  const result = await proposeOrthography(author, { m: model }, params);
+  assert.equal([...result.orthography, ...result.orthography_review].some((entry) => entry.expected === "くん"), false);
+});
+
+test("a variant that also matches inside other words goes to review", async () => {
+  const side = async (texts) => aggregateVariants(await Promise.all(texts.map(async (text, i) => docVariants(`d${i}`, (await featuresOfMarkdown(text)).strTokens))));
+  const author = await side(["全て見た。全て食べた。", "全てを読む。全て終わる。", "全てだ。"]);
+  const model = await side(["すべて見た。すべて食べた。すべてを。", "すべてだ。すべて終わる。", "すべての本。"]);
+  const params = { orthography_min_count: 3, orthography_min_share: 0.8, orthography_z: 1, orthography_limit: 10 };
+  const result = await proposeOrthography(author, { m: model }, params);
+  const entry = [...result.orthography, ...result.orthography_review].find((e) => e.expected === "全て");
+  assert.ok(entry);
+  assert.equal(result.orthography.includes(entry), true);
+  const leaky = await side(["クン付けで呼ぶ。クンと呼ぶ。", "クンが来た。", "クンは寝た。"]);
+  const leakyAuthor = await side(["くん付けで呼ぶ。くんと呼ぶ。", "くんが来た。くんは寝た。", "くんの本。"]);
+  for (const entry of leaky.values()) {
+    entry.raw += 10;
+  }
+  const flagged = await proposeOrthography(leakyAuthor, { m: leaky }, params);
+  assert.equal(flagged.orthography.some((e) => e.expected === "くん"), false);
+  assert.match(flagged.orthography_review.find((e) => e.expected === "くん")?.check.join() ?? "", /ほかの語の一部/u);
+});
+
 test("density proposals take a threshold no long-enough profile article exceeds", async () => {
   const docOf = async (id, text) => ({ id, ...(await featuresOfMarkdown(text)) });
   const filler = "今日は晴れていたので散歩に出かけて公園を一周してから家に帰ってきた";

@@ -5,6 +5,7 @@ const HAN = /[\p{Script=Han}々〆ヶ]/u;
 const SINGLE_HAN = /^\p{Script=Han}$/u;
 const KANA_ONLY = /^[\p{Script=Hiragana}\p{Script=Katakana}ー]+$/u;
 const HAS_LETTER = /\p{L}/u;
+const KATAKANA_ONLY = /^[\p{Script=Katakana}ー]+$/u;
 
 const kanjiOf = (word) => new Set([...word].filter((char) => HAN.test(char)));
 const isSubset = (a, b) => [...a].every((char) => b.has(char));
@@ -34,11 +35,31 @@ export const readingOf = async (word) => {
 const isVariantToken = (token) =>
   token.pos !== "記号" && token.basic_form !== "*" && token.pos_detail_1 !== "数" && HAS_LETTER.test(token.basic_form) && !isAscii(token);
 
+const touches = (a, b) => a.word_position + a.surface_form.length === b.word_position;
+
+const isKatakanaFragment = (tokens, index) => {
+  const token = tokens[index];
+  if (!KATAKANA_ONLY.test(token.surface_form)) {
+    return false;
+  }
+  const prev = tokens[index - 1];
+  const next = tokens[index + 1];
+  return (prev && KATAKANA_ONLY.test(prev.surface_form) && touches(prev, token)) || (next && KATAKANA_ONLY.test(next.surface_form) && touches(token, next));
+};
+
+const occurrences = (text, word) => {
+  let n = 0;
+  for (let at = text.indexOf(word); at !== -1; at = text.indexOf(word, at + word.length)) {
+    n += 1;
+  }
+  return n;
+};
+
 export const docVariants = (id, strTokens) => {
   const variants = new Map();
   for (const { text, tokens } of strTokens) {
     tokens.forEach((token, index) => {
-      if (!isVariantToken(token)) {
+      if (!isVariantToken(token) || isKatakanaFragment(tokens, index)) {
         return;
       }
       const key = `${token.basic_form}/${token.pos}`;
@@ -46,7 +67,7 @@ export const docVariants = (id, strTokens) => {
       if (!entry) {
         const start = token.word_position - 1;
         const example = snippet(text, start, start + token.surface_form.length);
-        entry = { basic: token.basic_form, pos: token.pos, count: 0, docs: 1, surfaces: new Map(), details: new Map(), next: new Map(), example: id ? `${id}: ${example}` : example };
+        entry = { basic: token.basic_form, pos: token.pos, count: 0, raw: 0, docs: 1, surfaces: new Map(), details: new Map(), next: new Map(), example: id ? `${id}: ${example}` : example };
         variants.set(key, entry);
       }
       entry.count += 1;
@@ -54,6 +75,10 @@ export const docVariants = (id, strTokens) => {
       addCount(entry.details, token.pos_detail_1);
       addCount(entry.next, nextKey(tokens[index + 1]));
     });
+  }
+  const text = strTokens.map((str) => str.text).join("\n");
+  for (const entry of variants.values()) {
+    entry.raw = [...entry.surfaces.keys()].reduce((sum, surface) => sum + occurrences(text, surface), 0);
   }
   return variants;
 };
@@ -68,6 +93,7 @@ export const aggregateVariants = (docs) => {
         continue;
       }
       into.count += entry.count;
+      into.raw += entry.raw;
       into.docs += entry.docs;
       mergeCounts(into.surfaces, entry.surfaces);
       mergeCounts(into.details, entry.details);
@@ -112,6 +138,9 @@ const suspectReasons = (x, y) => {
     if (SINGLE_HAN.test(word)) {
       reasons.push(`「${word}」は 1 字の漢字で、別の読み・別の語のことがある`);
     }
+  }
+  if (y.raw - y.count > Math.max(2, y.count * 0.1)) {
+    reasons.push(`「${y.basic}」は文字列として ${y.raw} 回出るが、語としては ${y.count} 回。ほかの語の一部にも当たる`);
   }
   const dx = dominant(x.details);
   const dy = dominant(y.details);
