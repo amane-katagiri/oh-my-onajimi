@@ -4,18 +4,12 @@ const round = (value, digits) => Number(value.toFixed(digits));
 
 const BOLD_LEAD = "この文書の太字は ";
 
-const COLON_END = /[:：]\s*$/;
-const COLON_START = /^\s*[:：]/;
-
 const textOf = (node) => (node.type === "Str" || node.type === "Code" ? node.value : (node.children || []).map(textOf).join(""));
 
 const isBoldLabelItem = (item) => {
   const paragraph = item.children && item.children[0];
-  const [first, second] = paragraph && paragraph.type === "Paragraph" ? paragraph.children : [];
-  if (!first || first.type !== "Strong") {
-    return false;
-  }
-  return COLON_END.test(textOf(first)) || (second !== undefined && second.type === "Str" && COLON_START.test(second.value));
+  const [first, ...rest] = paragraph && paragraph.type === "Paragraph" ? paragraph.children : [];
+  return first !== undefined && first.type === "Strong" && rest.map(textOf).join("").trim() !== "";
 };
 
 const rule = (context, options = {}) => {
@@ -76,7 +70,7 @@ const rule = (context, options = {}) => {
         for (const item of boldLabels) {
           report(
             item,
-            new RuleError(`太字のラベルと「:」で始まる箇条書き（この文書に ${boldLabels.length} 個、目安 ${maxBoldLabelItems} 個以下）。ラベルを外して文で書くか、段落にする。`),
+            new RuleError(`頭を太字にした箇条書き（この文書に ${boldLabels.length} 個、目安 ${maxBoldLabelItems} 個以下）。頭の太字を外して文で書くか、段落にする。`),
           );
         }
       }

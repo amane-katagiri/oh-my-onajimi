@@ -89,10 +89,10 @@ test("decoration-density skips the bold check on documents shorter than minChars
   assert.deepEqual(await lintFixture("decoration-emphasis", "short-bold.md"), []);
 });
 
-test("decoration-density reports each bold-label list item at its own line", async () => {
-  const messages = (await lintFixture("decoration-emphasis", "fires-label.md")).filter((m) => /ラベル/u.test(m.message));
-  assert.deepEqual(messages.map((m) => [m.line, m.column]), [[3, 1], [4, 1]]);
-  assert.match(messages[0].message, /この文書に 2 個、目安 0 個以下/u);
+test("decoration-density reports each list item that opens with bold followed by more text, with or without a colon", async () => {
+  const messages = (await lintFixture("decoration-emphasis", "fires-label.md")).filter((m) => /頭を太字/u.test(m.message));
+  assert.deepEqual(messages.map((m) => [m.line, m.column]), [[3, 1], [4, 1], [5, 1]]);
+  assert.match(messages[0].message, /この文書に 3 個、目安 0 個以下/u);
 });
 
 test("decoration-density fires once when emphasis leans on bold", async () => {
@@ -101,7 +101,7 @@ test("decoration-density fires once when emphasis leans on bold", async () => {
   assert.match(messages[0].message, /斜体の割合 0\.25（筆者はふつう 0\.6、目安 0\.3 以上）/u);
 });
 
-test("decoration-density is clean on italic-leaning emphasis and colon-free bold items", async () => {
+test("decoration-density is clean on italic-leaning emphasis, all-bold items and bold later in an item", async () => {
   assert.deepEqual(await lintFixture("decoration-emphasis", "clean.md"), []);
 });
 

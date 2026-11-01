@@ -107,7 +107,7 @@ test("density entries and the new thresholds reach the generated config, and phr
   const densityLines = lines.filter((line) => / phrase-density /u.test(line));
   assert.deepEqual(densityLines.map((line) => line.split(" ")[0]), ["1:7", "1:17", "1:28", "1:48"], lines.join("\n"));
   assert.ok(densityLines.every((line) => line.endsWith("「思う」が多い。この文書では 4 回（目安 1 回まで）。3 回減らす。")), lines.join("\n"));
-  assert.ok(lines.some((line) => /^3:1 decoration-density 太字のラベル/u.test(line)), lines.join("\n"));
+  assert.ok(lines.some((line) => /^3:1 decoration-density 頭を太字にした箇条書き/u.test(line)), lines.join("\n"));
   assert.throws(() => parseProfile("density:\n  - tokens: [{ basic_form: a }]\n    message: x\n"), /density\[0\]: max_per_1000 が要る/u);
   assert.throws(() => parseProfile("thresholds:\n  emphasis_share_min: 2\n"), /thresholds\.emphasis_share_min: 0 以上 1 以下/u);
 });

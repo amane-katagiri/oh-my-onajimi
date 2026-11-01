@@ -76,7 +76,7 @@ bin/onajimi eval --author alice                       # 最後に 1 回だけ、
 | `import --author <name> --from <dir> [--force]` | 別の root から profile.yml・corpus.yml・split.yml・profile/ を写し、build する。corpus/ と profile/_full/ は写さない。写し先にもうあれば止まる。`--force` を付けると上書きする（写し先の profile/ は _full/ を残して入れ替え、corpus/ には触らない） |
 | `build --author <name> [--check]` | profile.yml から generated/ を作る。`--check` は generated/ が古ければ 1 で終わる |
 | `lint --author <name> <file>` | ファイルをそのまま検査する |
-| `guard <before> <after>` | 数値と否定の数が変わっていないかを見る |
+| `guard <before> <after>` | 数値、否定の数、問いの文と推量の文の数が変わっていないかを見る。問いは「か。」「か？」「？」「?」で終わる文と「〜ではないかと思う」の形、推量は「だろう」「でしょう」「かもしれない」「らしい」「ようだ」で終わる文（どちらもインラインコードの中は見ない） |
 | `split --author <name>` | 記事を選んで分け、split.yml に書く |
 | `corpus --author <name>` | 分けた記事の本数と字数を出す |
 | `control --author <name> --runner <name> [...]` | 比較用の記事を書かせる |
@@ -173,7 +173,7 @@ bin/onajimi eval --author alice                       # 最後に 1 回だけ、
 | `bold_per_1000` | 地の文 1000 字あたりの太字の上限。超えた文書では、太字の 1 個ずつに「この文書の太字は N 個（目安 M 個まで）。K 個減らす。」を出す |
 | `decoration_min_chars` | 地の文がこの字数未満の文書では、太字の密度を見ない |
 | `list_ratio` | 地の文に占める箇条書きの割合の上限 |
-| `bold_label_items` | 「- **ラベル**: 説明」型の箇条書きの数の上限。0 なら 1 個目から指摘する |
+| `bold_label_items` | 頭を太字にした箇条書きの数の上限。項目の最初が太字で、同じ段落に続きの文があるものを数える（「- **ラベル**: 説明」も「1. **比べる。** 説明」も。全部が太字の項目や、途中の太字は数えない）。0 なら 1 個目から指摘する |
 | `emphasis_share_min` | 強調（太字と斜体）のうち、斜体が占める割合の下限 |
 | `emphasis_min_marks` | 強調がこの数以上ある文書だけで、斜体の割合を見る |
 | `emphasis_share_typical` | 筆者のふだんの斜体の割合。メッセージに入る |

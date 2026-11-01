@@ -21,10 +21,10 @@ onajimi init --author alice --posts ~/blog/content/post   # corpus.yml のひな
 # profile.yml に辞書としきい値を書くか、pipeline で提案を作って accept で足す
 onajimi build --author alice                              # profile.yml から generated/ を作る
 onajimi lint --author alice draft.md                      # 指摘を「行:列 ルール名 メッセージ」で 1 行ずつ出す。0 件なら何も出さない
-onajimi guard draft.md out.md                             # 直す前と後で数値と否定の数が変わっていれば 1 で終わる
+onajimi guard draft.md out.md                             # 直す前と後で数値・否定・問い・推量の数が変わっていれば 1 で終わる
 ```
 
-`lint` は、指摘を 1 行に 1 件ずつ出します。指摘がなければ何も出しません。`guard` は、直した稿で数値と否定が変わっていたら 1 で終わります。
+`lint` は、指摘を 1 行に 1 件ずつ出します。指摘がなければ何も出しません。`guard` は、直した稿で数値、否定の数、問いの文と推量の文の数が変わっていたら 1 で終わります。
 
 ## コマンド
 
@@ -34,7 +34,7 @@ onajimi guard draft.md out.md                             # 直す前と後で�
 | `init` / `import` | 筆者のひな形を作る / 別の root から profile.yml などを取り込んで build する（`--force` で上書き） |
 | `build [--check]` | profile.yml から辞書と `.textlintrc.json` を作る。`--check` は古ければ 1 で終わる |
 | `lint <file>` | 下書きを検査する |
-| `guard <before> <after>` | 直した稿で数値と否定が変わっていないかを見る |
+| `guard <before> <after>` | 直した稿で数値、否定、問いと推量の文の数が変わっていないかを見る |
 | `split` / `corpus` | 記事を profile・dev・test・holdout に分ける / 本数と字数を出す |
 | `control` | モデルに対照の記事を書かせる（費用がかかるので `--yes` がなければ見積もりだけ出す） |
 | `profile` / `review` / `accept` | 候補としきい値を出す / review.md にまとめる / 番号で profile.yml に足す |

@@ -251,12 +251,16 @@ const registerNote = (row) =>
     ? `筆者の他のカテゴリーでは 1000 字あたり ${row.authorOtherPer1000}（対照 ${row.controlPer1000}）。ジャンルで使い方が変わる語`
     : undefined;
 
+const QUOTE_NOTE = "かぎかっこに掛かる語。会話文や引用した問いを地の文に変えさせるおそれがある";
+
+const touchesQuote = (tokens) => tokens.some((token) => /[「」]/u.test(token.basic_form ?? token.surface_form ?? ""));
+
 const modelSurface = (row, runners) => topList(new Map(runners.flatMap((runner) => [...row.control[runner].surfaces])))[0];
 
 export const proposeModelLeaning = (rows, runners, { proposal_z: zMax, proposal_max_author_docs: maxAuthorDocs, proposal_limit: limit }) => {
   const picked = rows.filter((row) => leansToEveryModel(row, runners, zMax) && row.author.docs <= maxAuthorDocs);
   const entry = (row) => {
-    const note = registerNote(row);
+    const note = [registerNote(row), touchesQuote(row.tokens) ? QUOTE_NOTE : undefined].filter(Boolean).join("。");
     return {
       tokens: row.tokens,
       message: `「${modelSurface(row, runners)}」は筆者の言い方ではない。`,
@@ -312,6 +316,7 @@ export const proposeDensity = (rates, authorDocs, controlDocs, { min_chars: minC
         min_chars: minChars,
         typical_per_1000: round1(percentile(authorRates, 0.5)),
         message: `「${rate.feature.replace(/\/.*$/u, "").replaceAll("+", "")}」が多い。`,
+        ...(touchesQuote(rate.tokens) ? { note: QUOTE_NOTE } : {}),
         evidence: {
           feature: rate.feature,
           author_articles: authorRates.length,

@@ -173,11 +173,11 @@ test("bold thresholds count only articles with enough prose; bold labels and emp
   assert.deepEqual(result.controls.m.bold_label_items, { articles: 1, p50: 3, max: 3, fires: 1, fires_stricter: 1 });
   assert.equal(result.controls.m.emphasis_share_min.fires, 1);
 
-  const measure = await measureArticle(["- **速さ**: 速い", "- **軽さ：** 軽い", "- **太字**だけ", "- ふつう: 説明", "", "*斜体*と**太字**。", "", "> - **引用**: 数えない", ""].join("\n"));
-  assert.equal(measure.bold_label_items, 2);
-  assert.deepEqual(measure.boldLabels.map((at) => at.line), [1, 2]);
-  assert.equal(measure.marks, 5);
-  assert.equal(measure.emphasis_share, 0.2);
+  const measure = await measureArticle(["- **速さ**: 速い", "- **軽さ：** 軽い", "- **太字**で始まる", "- **全部太字**", "- 中の **太字**", "", "1. **比べる。** 説明", "", "*斜体*と**太字**。", "", "> - **引用**: 数えない", ""].join("\n"));
+  assert.equal(measure.bold_label_items, 4);
+  assert.deepEqual(measure.boldLabels.map((at) => at.line), [1, 2, 3, 7]);
+  assert.equal(measure.marks, 8);
+  assert.equal(measure.emphasis_share, 0.13);
 });
 
 test("orthography groups script variants by reading and part of speech and writes prh entries", async () => {
@@ -288,4 +288,24 @@ test("only features with a content word are checked against the brief; function-
   assert.ok(wo);
   assert.equal("in_brief_docs" in wo.evidence, false);
   assert.ok(leaning.excluded_in_brief.some((entry) => entry.evidence.feature === "確認+する"));
+});
+
+test("model_leaning and density candidates on a kagikakko token carry a note", async () => {
+  const docOf = async (id, text) => ({ id, ...(await featuresOfMarkdown(text)) });
+  const filler = "今日は晴れていたので散歩に出かけて公園を一周してから家に帰ってきた";
+  const authorDocs = [await docOf("a1", `${filler}。${filler}。`)];
+  const controlDocs = { m: [await docOf("c1", `「${filler}か」と聞いた。「${filler}か」と聞いた。`)] };
+  const rates = [
+    { feature: "か+」", tokens: [{ basic_form: "か" }, { basic_form: "」" }], evidence: {} },
+    { feature: "た+。", tokens: [{ basic_form: "た" }, { basic_form: "。" }], evidence: {} },
+  ];
+  const density = proposeDensity(rates, authorDocs, controlDocs, { min_chars: 0 });
+  assert.match(density.find((entry) => entry.evidence.feature === "か+」").note, /かぎかっこに掛かる語/u);
+  assert.equal("note" in density.find((entry) => entry.evidence.feature === "た+。"), false);
+
+  const rows = compare(aggregate(authorDocs), { m: aggregate(controlDocs.m) }, { alpha0: 100, min_docs: 1, min_count: 1 });
+  annotate(rows, {});
+  const leaning = proposeModelLeaning(rows, ["m"], { proposal_z: 0, proposal_max_author_docs: 1, proposal_limit: 200 });
+  const quoted = leaning.model_leaning.find((entry) => entry.tokens.some((token) => token.basic_form === "」"));
+  assert.match(quoted.note, /会話文や引用した問いを地の文に変えさせるおそれがある/u);
 });

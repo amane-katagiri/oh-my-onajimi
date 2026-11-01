@@ -4,6 +4,8 @@ note: |-
   model_leaning は話題の語・ジャンルで使い方が変わる語・指示に含まれていた語を除くと「くれます」だけが残ったが、dev で筆者が使っていたので外し、空にした。初版の ふと・〜た瞬間・思わず・どこか・試み・大切→重要・推奨→おすすめ は、指示への混入か dev での筆者の使用が分かったので外した。
   density は筆者も使うが頻度が違う語。話題の語（サーバー、文字、本など）と、筆者の上限が高くて対照がほぼ引っかからない語（た。）は入れていない。
   斜体の割合は筆者の記事どうしのばらつきが大きく分けられないので入れていない。
+  か+」 は外した。会話文や引用した問いを地の文に変えさせ、意味を壊した例が出た。
+  。+それ のメッセージから「前の文とつなげる」を外した。文をつなげて意味を変えさせた例が出た。
 model_leaning: []
 author_leaning: []
 orthography:
@@ -22,18 +24,6 @@ orthography:
   - expected: みなさん
     pattern: 皆さん
 density:
-  - tokens:
-      - basic_form: か
-      - basic_form: 」
-    max_per_1000: 0.3
-    typical_per_1000: 0
-    message: 「〜か」」で終わるかぎかっこを減らす。問いをかぎかっこで見せず、地の文で書く。
-    evidence:
-      feature: か+」
-      author_max: 0.3
-      opus_fires: 19/44
-      gemini_fires: 17/49
-      in_brief_docs: 1
   - tokens:
       - basic_form: を
       - basic_form: 、
@@ -75,7 +65,7 @@ density:
       - basic_form: それ
     max_per_1000: 0.6
     typical_per_1000: 0
-    message: 「それ」で始まる文を減らす。前の文とつなげるか、指すものを書く。
+    message: 「それ」で始まる文を減らす。「それ」が指すものを書く。
     evidence:
       feature: 。+それ
       author_max: 0.6

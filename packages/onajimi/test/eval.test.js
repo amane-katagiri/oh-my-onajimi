@@ -49,7 +49,7 @@ const score = async (rules, messages) => {
 };
 
 test("eval counts each occurrence and, separately, reduce-by-count findings once per document and entry", async () => {
-  const label = (line) => ({ ruleId: "onajimi/decoration-density", line, column: 1, message: "太字のラベルと「:」で始まる箇条書き（この文書に 2 個、目安 0 個以下）。ラベルを外して文で書くか、段落にする。" });
+  const label = (line) => ({ ruleId: "onajimi/decoration-density", line, column: 1, message: "頭を太字にした箇条書き（この文書に 2 個、目安 0 個以下）。頭の太字を外して文で書くか、段落にする。" });
   const row = await score(densityRules("「A」", "「B」"), {
     a: [spread(1, "「A」"), spread(2, "「A」"), spread(3, "「A」"), spread(4, "「B」"), label(5), label(6), bold(7), bold(8)],
     b: [spread(1, "「A」")],

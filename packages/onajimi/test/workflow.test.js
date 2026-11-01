@@ -109,6 +109,15 @@ test("review rows show z, counts, brief and register columns, context and exampl
           min_chars: 1500,
           evidence: { feature: "を+、", author_articles: 5, author_max: 0.6, control: { opus: { p50: 0.4, fires: 3, docs: 9 } } },
         },
+        {
+          id: "D2",
+          message: "「か」」が多い。",
+          max_per_1000: 0.3,
+          typical_per_1000: 0,
+          min_chars: 1500,
+          note: "かぎかっこに掛かる語",
+          evidence: { feature: "か+」", author_articles: 5, author_max: 0.3, control: { opus: { p50: 0.4, fires: 3, docs: 9 } } },
+        },
       ],
     },
     dev: { M1: { count: 3, docs: 2 }, D1: { max: 0.9, fires: 1, docs: 4 } },
@@ -122,6 +131,7 @@ test("review rows show z, counts, brief and register columns, context and exampl
   assert.match(text, /後ろ: 筆者 に\/助詞 1｜対照 懐かしい\/形容詞 9/u);
   assert.match(text, new RegExp(`例: 筆者「${"あ".repeat(40)}…」｜対照「どこか懐かしい。」`, "u"));
   assert.match(text, /注: ジャンルで変わる/u);
+  assert.match(text, /- D2 「か」」が多い。.*\n  - 注: かぎかっこに掛かる語$/mu);
   assert.match(text, /generated\/ が profile\.yml と食い違っている/u);
   assert.equal(truncate("abc", 2), "ab…");
 });

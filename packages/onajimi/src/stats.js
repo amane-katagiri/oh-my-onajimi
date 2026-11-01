@@ -57,16 +57,10 @@ const maxTenInSentence = async (sentence) => {
   return max;
 };
 
-const COLON_END = /[:：]\s*$/u;
-const COLON_START = /^\s*[:：]/u;
-
 export const isBoldLabelItem = (item) => {
   const paragraph = item.children?.[0];
-  const [first, second] = paragraph?.type === "Paragraph" ? paragraph.children : [];
-  if (first?.type !== "Strong") {
-    return false;
-  }
-  return COLON_END.test(nodeText(first)) || (second?.type === "Str" && COLON_START.test(second.value));
+  const [first, ...rest] = paragraph?.type === "Paragraph" ? paragraph.children : [];
+  return first?.type === "Strong" && rest.map(nodeText).join("").trim() !== "";
 };
 
 export const measureArticle = async (markdown) => {

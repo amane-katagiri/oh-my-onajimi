@@ -1,4 +1,4 @@
-import { proseText } from "./prose.js";
+import { parseMarkdown, proseText } from "./prose.js";
 
 const NEGATION =
   /しないで|ません|なかっ|なけれ|ない|なく|禁止|(?<!必)(?<!は)ず(?=[に、。]|$)|ぬ(?=[。、]|$)|未(?![来明])(?=[一-龥])|不(?=要|可|明|正|足|在|備|具合|適|十分|一致|安定|許可|採用|使用|参加)|非(?=公開|対応|表示|推奨|同期|互換|同意)|無(?=効|料|視|関係|制限|断)/gmu;
@@ -107,6 +107,45 @@ export const extractNumbers = (rawText) => {
   return found;
 };
 
+const SENTENCE = /[^。？?！!]+(?:[。？?！!]+[」』）)]*)?/gu;
+const SENTENCE_BLOCKS = new Set(["Paragraph", "Header", "TableCell"]);
+const QUESTION_END = /(?:[？?]|か[。？?]?)[」』）)]*$/u;
+const NOT_QUESTION_KA =
+  /(?:明ら|確|わず|僅|静|豊|ほ|速や|穏や|鮮や|細や|爽や|健や|和や|緩や|賑や|にぎや|華や|密|愚|疎|おろ|遥|はる|ほの|柔ら|滑ら|なめら|清ら|朗ら|安ら|大ま)か。?[」』）)]*$/u;
+const NAIKA_END = /ではない(?:か|だろうか|でしょうか)と(?:思|考|感じ)[^。？?！!]*[。！!]?[」』）)]*$/u;
+const CONJECTURE_END =
+  /(?:だろう|でしょう|かもしれ(?:ない|ません)|(?<!素晴)(?<!すば)(?<!めずら)(?<!珍)(?<!わざと)(?<!可愛)(?<!かわい)(?<!憎)(?<!馬鹿)(?<!ばか)(?<!いや)(?<!汚)らしい(?:です)?|よう(?:だ|です))[ねよな]*[。！!]?[」』）)]*$/u;
+
+const inlineText = (node) => {
+  if (node.type === "Str") {
+    return node.value;
+  }
+  if (node.type === "Code") {
+    return "＿";
+  }
+  return (node.children ?? []).map(inlineText).join("");
+};
+
+export const sentencesOf = (markdown) => {
+  const sentences = [];
+  const walk = (node) => {
+    if (SENTENCE_BLOCKS.has(node.type)) {
+      const text = inlineText(node).replace(/\s*\n\s*/gu, "");
+      sentences.push(...(text.match(SENTENCE) ?? []).map((sentence) => sentence.trim()).filter(Boolean));
+      return;
+    }
+    for (const child of node.children ?? []) {
+      walk(child);
+    }
+  };
+  walk(parseMarkdown(markdown));
+  return sentences;
+};
+
+export const isQuestion = (sentence) => (QUESTION_END.test(sentence) && !NOT_QUESTION_KA.test(sentence)) || NAIKA_END.test(sentence);
+
+export const isConjecture = (sentence) => CONJECTURE_END.test(sentence);
+
 const tally = (values) => {
   const counts = new Map();
   for (const value of values) {
@@ -139,6 +178,22 @@ export const guard = (beforeMarkdown, afterMarkdown) => {
   const negationsAfter = countNegations(after);
   if (negationsBefore !== negationsAfter) {
     problems.push(`否定の数が変わった（${negationsBefore} → ${negationsAfter}）。肯定と否定が入れ替わった文を元に戻す。`);
+  }
+
+  const sentencesBefore = sentencesOf(beforeMarkdown);
+  const sentencesAfter = sentencesOf(afterMarkdown);
+  const kinds = [
+    [isQuestion, "問い", "断定や地の文に変えた問いを元に戻す。", "元にない問いを足していないか見る。"],
+    [isConjecture, "推量", "断定に変えた推量を元に戻す。", "断定を推量に変えていないか見る。"],
+  ];
+  for (const [test, label, fewer, more] of kinds) {
+    const was = sentencesBefore.filter(test).length;
+    const now = sentencesAfter.filter(test).length;
+    if (was > now) {
+      problems.push(`${label}の文が減った（${was} → ${now}）。${fewer}`);
+    } else if (was < now) {
+      problems.push(`${label}の文が増えた（${was} → ${now}）。${more}`);
+    }
   }
   return problems;
 };

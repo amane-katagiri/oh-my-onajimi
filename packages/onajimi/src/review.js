@@ -72,7 +72,10 @@ const densityRow = (entry, dev = {}) => {
   const controls = Object.entries(e.control)
     .map(([runner, c]) => `${runner} 中央 ${c.p50}・超え ${c.fires}/${c.docs}本`)
     .join("、");
-  return `- ${idText(entry)}${entry.message}（${e.feature}）目安 ${entry.max_per_1000}/1000｜筆者 中央 ${entry.typical_per_1000}・最大 ${e.author_max}（${e.author_articles}本、${entry.min_chars}字以上）${devDensityText(dev[entry.id])}｜${controls}｜${briefText(e)}`;
+  return [
+    `- ${idText(entry)}${entry.message}（${e.feature}）目安 ${entry.max_per_1000}/1000｜筆者 中央 ${entry.typical_per_1000}・最大 ${e.author_max}（${e.author_articles}本、${entry.min_chars}字以上）${devDensityText(dev[entry.id])}｜${controls}｜${briefText(e)}`,
+    ...(entry.note ? [`  - 注: ${entry.note}`] : []),
+  ];
 };
 
 const hintLines = (hints) => {
@@ -98,7 +101,7 @@ const THRESHOLD_ROWS = [
   ["max_ten", "1 文の読点（最大）"],
   ["bold_per_1000", "太字/1000字"],
   ["list_ratio", "箇条書きの比率"],
-  ["bold_label_items", "太字ラベルの箇条書き（個）"],
+  ["bold_label_items", "頭を太字にした箇条書き（個）"],
   ["emphasis_share_min", "斜体の割合（下限）"],
 ];
 
@@ -141,11 +144,11 @@ export const renderReview = ({ author, proposal, thresholds, evalRows, findings,
     ...section(
       "指示に入っていたので外した候補（excluded_in_brief）",
       "対照の指示に語が入っていた。指示から写った恐れがあるので辞書に入れない。",
-      (proposal.excluded_in_brief ?? []).map((entry) => `- ${surfaceOf(entry)}（${entry.evidence.feature}）z ${zText(entry.evidence.z)}｜筆者 ${entry.evidence.author_count}回｜${briefText(entry.evidence)}${entry.note ? "｜他ジャンルで多い" : ""}`),
+      (proposal.excluded_in_brief ?? []).map((entry) => `- ${surfaceOf(entry)}（${entry.evidence.feature}）z ${zText(entry.evidence.z)}｜筆者 ${entry.evidence.author_count}回｜${briefText(entry.evidence)}${entry.note ? `｜${entry.note}` : ""}`),
     ),
     ...section("表記の候補（orthography）", "読みと品詞が同じで表記だけが違う組。expected が筆者の表記、pattern がモデルの表記。", (proposal.orthography ?? []).slice(0, REVIEW_LIMITS.orthography).flatMap(orthographyRow)),
     ...section("表記の候補・要確認（orthography_review）", "別の語が同じ読みにまとまっているかもしれない組。例文で確かめる。", (proposal.orthography_review ?? []).slice(0, REVIEW_LIMITS.orthography_review).flatMap(orthographyRow)),
-    ...section("密度の候補（density）", "筆者も使うが頻度が違う語。プロファイル用の記事が 1 本も超えない値を目安にした。超えは目安で引っかかる対照の記事の数。", (proposal.density ?? []).slice(0, REVIEW_LIMITS.density).map((entry) => densityRow(entry, dev))),
+    ...section("密度の候補（density）", "筆者も使うが頻度が違う語。プロファイル用の記事が 1 本も超えない値を目安にした。超えは目安で引っかかる対照の記事の数。", (proposal.density ?? []).slice(0, REVIEW_LIMITS.density).flatMap((entry) => densityRow(entry, dev))),
     ...section("筆者寄りの語（author_leaning の手がかり）", "筆者が多く使い、対照が少ない語。モデル側の言い方との対応は人が決める。", hintLines(proposal.author_leaning_hints ?? [])),
     ...section("しきい値", "記事ごとの値。端は最大（斜体の割合は最小）。引っかかる本数は提案の値で引っかかる対照の記事の数。", thresholdLines(thresholds, proposal)),
     ...section("今の profile.yml での dev の指摘", null, [
