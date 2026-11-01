@@ -1,0 +1,23 @@
+note: テスト用
+model_leaning:
+  - tokens:
+      - surface_form: 静か
+      - surface_form: に
+      - basic_form: 壊れる
+    message: 「静かに壊れる」は筆者の言い方ではない。
+    evidence:
+      author_count: 0
+author_leaning:
+  - tokens:
+      - basic_form: 確認
+      - basic_form: する
+    author: 確かめる
+orthography:
+  - expected: できる
+    pattern: 出来る
+thresholds:
+  sentence_length: 60
+  max_ten: 2
+  bold_per_1000: 3
+  list_ratio: 0.3
+allow: []

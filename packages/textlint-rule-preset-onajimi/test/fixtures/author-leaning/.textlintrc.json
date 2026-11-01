@@ -1,0 +1,11 @@
+{
+  "rules": {
+    "preset-onajimi": {
+      "author-leaning": {
+        "severity": "warning",
+        "dictionaryPath": "./dict.json",
+        "dictionaryMode": "override"
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "rules": {
+    "preset-onajimi": {
+      "decoration-density": {
+        "severity": "warning",
+        "maxBoldPer1000": 5,
+        "maxListRatio": 0.3
+      }
+    }
+  }
+}

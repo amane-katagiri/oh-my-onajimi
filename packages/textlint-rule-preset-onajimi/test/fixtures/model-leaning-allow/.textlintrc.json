@@ -1,0 +1,13 @@
+{
+  "rules": {
+    "preset-onajimi": {
+      "model-leaning": {
+        "dictionaryPath": "../model-leaning/dict.json",
+        "dictionaryMode": "override",
+        "allows": [
+          "/^静かに壊れ$/"
+        ]
+      }
+    }
+  }
+}

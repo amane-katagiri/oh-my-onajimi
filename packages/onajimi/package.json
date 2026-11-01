@@ -1,0 +1,18 @@
+{
+  "name": "onajimi",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "onajimi": "bin/onajimi.js"
+  },
+  "dependencies": {
+    "@textlint/markdown-to-ast": "15.8.0",
+    "textlint": "15.8.0",
+    "textlint-rule-max-ten": "5.0.0",
+    "textlint-rule-preset-onajimi": "0.0.0",
+    "textlint-rule-prh": "6.1.1",
+    "textlint-rule-sentence-length": "5.2.1",
+    "yaml": "2.9.1"
+  }
+}

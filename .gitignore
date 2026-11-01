@@ -1,0 +1,4 @@
+node_modules/
+authors/*/corpus/
+authors/*/generated/
+authors/*/profile/

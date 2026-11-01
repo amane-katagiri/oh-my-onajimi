@@ -1,0 +1,13 @@
+{
+  "name": "oh-my-onajimi",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "test": "node --test \"packages/*/test/*.test.js\""
+  }
+}

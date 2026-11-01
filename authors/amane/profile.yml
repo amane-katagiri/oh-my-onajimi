@@ -1,0 +1,65 @@
+note: >-
+  v0 の仮置き。手で書いた小さな辞書としきい値で、プロファイラ（v1）の出力が出たら置き換える。
+  evidence の数は tech/ugoki 記事の本文（コードブロックを除く）を文字列で数えただけで、対照コーパスとの比較はまだしていない。
+
+model_leaning:
+  - tokens:
+      - surface_form: 静か
+      - surface_form: に
+      - basic_form: 壊れる
+    message: 「静かに壊れる」は筆者の言い方ではない。何がどう壊れるのかを具体的に書く。
+    evidence:
+      author_count: 0
+  - tokens:
+      - surface_form: 時間
+      - surface_form: を
+      - basic_form: 溶かす
+    message: 「時間を溶かす」は筆者の言い方ではない。何に何時間使ったかを書く。
+    evidence:
+      author_count: 0
+  - tokens:
+      - surface_form: 過言
+      - surface_form: で
+      - surface_form: は
+    message: 「〜と言っても過言ではない」は筆者の言い方ではない。言い切るか、根拠を書く。
+    evidence:
+      author_count: 0
+  - tokens:
+      - surface_form: 鍵
+      - surface_form: を
+      - basic_form: 握る
+    message: 「鍵を握る」は筆者の言い方ではない。何が決め手なのかをそのまま書く。
+    evidence:
+      author_count: 0
+  - tokens:
+      - surface_form: 深
+      - basic_form: 掘る
+    message: 「深掘り」は筆者の言い方ではない。「詳しく調べる」「掘り下げる」など。
+    evidence:
+      author_count: 0
+
+author_leaning:
+  - tokens:
+      - basic_form: 大切
+    author: 重要
+    evidence:
+      author_count: 5
+      author_alternative_count: 48
+
+orthography:
+  - expected: 様々
+    pattern: さまざま
+  - expected: 全て
+    pattern: すべて
+  - expected: 分か
+    pattern: /わか(?=[らりるれろっ])/
+  - expected: よ
+    pattern: /良(?=[いくかけ])/
+
+thresholds:
+  sentence_length: 180
+  max_ten: 4
+  bold_per_1000: 3
+  list_ratio: 0.3
+
+allow: []

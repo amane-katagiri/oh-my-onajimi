@@ -1,0 +1,13 @@
+{
+  "name": "textlint-rule-preset-onajimi",
+  "version": "0.0.0",
+  "private": true,
+  "main": "index.js",
+  "type": "commonjs",
+  "dependencies": {
+    "textlint-rule-preset-ai-words-ja": "1.2.1"
+  },
+  "devDependencies": {
+    "textlint": "15.8.0"
+  }
+}

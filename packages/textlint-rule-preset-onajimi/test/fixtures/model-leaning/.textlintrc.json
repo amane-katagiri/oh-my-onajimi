@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "preset-onajimi": {
+      "model-leaning": {
+        "dictionaryPath": "./dict.json",
+        "dictionaryMode": "override"
+      }
+    }
+  }
+}
