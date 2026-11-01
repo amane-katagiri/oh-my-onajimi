@@ -38,7 +38,7 @@ oh-my-onajimi/
 │       ├─ author-leaning.json # ai-words-ja 形式
 │       ├─ orthography.yml     # prh 形式（表記ゆれだけを扱う）
 │       └─ .textlintrc.json
-├─ skill/onajimi/SKILL.md                   # 薄いスキル
+├─ skills/onajimi/SKILL.md                   # 薄いスキル
 └─ notes/
 ```
 

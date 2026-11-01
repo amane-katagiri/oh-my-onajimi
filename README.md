@@ -15,8 +15,8 @@ authors/<name>/split.yml                 プロファイル用・dev 用・テ�
 authors/<name>/profile/                  profile と review の出力（candidates.tsv・proposal.yml・thresholds.yml・review.md）
 authors/<name>/generated/                build の出力（手で編集しない）
 authors/<name>/corpus/                   筆者の記事と対照（_control/<runner>/）。gitignore
-skill/onajimi/SKILL.md                   薄いスキル（書いた記事を筆者に寄せる）
-skill/onajimi-profile/SKILL.md           プロファイルを人と決めるためのスキル
+skills/onajimi/SKILL.md                   薄いスキル（書いた記事を筆者に寄せる）
+skills/onajimi-profile/SKILL.md           プロファイルを人と決めるためのスキル
 ```
 
 ## 新しい筆者のプロファイルを作る
@@ -27,7 +27,7 @@ npx onajimi init --author alice --posts ~/blog/content/post   # corpus.yml の�
 npx onajimi pipeline --author alice   # split → control（全 runner、再開できる）→ profile → build → review
 ```
 
-`pipeline` は split.yml がなければ作り、全 runner の対照を全記事ぶん作る（`--limit n` は 1 回で新しく作る数、`--delay` は間隔）。どれかの runner が止まったら profile に進まず、3（回数制限）か 4（混雑）で終わるので、同じコマンドで再開する。最後に `authors/<name>/profile/review.md` を書く。これを読んで profile.yml を決め、`build` と `eval --set dev` で確かめる（skill/onajimi-profile）。test は最後に一度だけ使う。
+`pipeline` は split.yml がなければ作り、全 runner の対照を全記事ぶん作る（`--limit n` は 1 回で新しく作る数、`--delay` は間隔）。どれかの runner が止まったら profile に進まず、3（回数制限）か 4（混雑）で終わるので、同じコマンドで再開する。最後に `authors/<name>/profile/review.md` を書く。これを読んで profile.yml を決め、`build` と `eval --set dev` で確かめる（skills/onajimi-profile）。test は最後に一度だけ使う。
 
 ## 使い方
 
