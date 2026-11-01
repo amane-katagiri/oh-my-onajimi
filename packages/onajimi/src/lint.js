@@ -6,7 +6,6 @@ import textPlugin from "@textlint/textlint-plugin-text";
 import prh from "textlint-rule-prh";
 import sentenceLength from "textlint-rule-sentence-length";
 import maxTen from "textlint-rule-max-ten";
-import preset from "../../textlint-rule-preset-onajimi/index.js";
 import { generatedDir } from "./paths.js";
 import { blankLooseFrontmatter } from "./prose.js";
 
@@ -44,17 +43,17 @@ const PLUGINS = [
   { pluginId: "@textlint/textlint-plugin-markdown", plugin: interop(markdownPlugin), options: true },
 ];
 
-const presetRules = (userOptions) =>
+const presetRules = (preset, userOptions) =>
   Object.entries(preset.rules).map(([key, rule]) => {
     const user = userOptions[key];
     const options = user === false ? false : user === undefined || user === true ? preset.rulesConfig[key] : user;
     return { ruleId: `onajimi/${key}`, rule, options };
   });
 
-export const kernelRules = (config) =>
+export const kernelRules = (config, preset) =>
   Object.entries(config.rules ?? {}).flatMap(([ruleId, options]) => {
     if (ruleId === PRESET) {
-      return presetRules(options === true ? {} : options);
+      return presetRules(preset, options === true ? {} : options);
     }
     if (!(ruleId in RULES)) {
       throw new Error(`知らないルール ${ruleId}`);
@@ -62,14 +61,14 @@ export const kernelRules = (config) =>
     return [{ ruleId, rule: RULES[ruleId], options }];
   }).filter((rule) => rule.options !== false);
 
-export const createAuthorLinter = async (root, author) => {
+export const createAuthorLinter = async (root, author, preset) => {
   const configFilePath = path.join(generatedDir(root, author), ".textlintrc.json");
   if (!fs.existsSync(configFilePath)) {
     throw new Error(`${path.relative(process.cwd(), configFilePath)} がない。先に onajimi build --author ${author} を実行する。`);
   }
   const options = {
     configBaseDir: path.dirname(configFilePath),
-    rules: kernelRules(JSON.parse(fs.readFileSync(configFilePath, "utf8"))),
+    rules: kernelRules(JSON.parse(fs.readFileSync(configFilePath, "utf8")), preset),
     plugins: PLUGINS,
   };
   const kernel = new TextlintKernel();
@@ -77,8 +76,8 @@ export const createAuthorLinter = async (root, author) => {
     (await kernel.lintText(blankLooseFrontmatter(text), { ...options, ext: path.extname(filePath), filePath })).messages;
 };
 
-export const lint = async ({ root, author, file }) => {
-  const lintText = await createAuthorLinter(root, author);
+export const lint = async ({ root, author, file, preset }) => {
+  const lintText = await createAuthorLinter(root, author, preset);
   const filePath = path.resolve(file);
   return formatMessages(await lintText(fs.readFileSync(filePath, "utf8"), filePath));
 };

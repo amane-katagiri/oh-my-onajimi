@@ -22,15 +22,16 @@
 ```
 oh-my-onajimi/                              # Claude Code プラグインのルート（npm の単一パッケージ。workspaces は使わない）
 ├─ .claude-plugin/plugin.json / marketplace.json
-├─ bin/onajimi                 # packages/onajimi/bin/onajimi.js を呼ぶだけの入口
-├─ packages/textlint-rule-preset-onajimi/   # textlint のルール集（CJS）。単体で配れる形
+├─ bin/onajimi                 # リポジトリとプラグインの入口。src/main.js に相対パスの preset とリポジトリの root を渡す
+├─ packages/textlint-rule-preset-onajimi/   # textlint のルール集（CJS）。npm の textlint-rule-preset-onajimi
 │   ├─ index.js                # model-leaning / author-leaning / decoration-density / phrase-density
 │   ├─ rules/matcher.js        # kuromojin + morpheme-match-textlint の照合（leaning と density で共有）
 │   ├─ rules/token-leaning.js  # 辞書の語を拾う（model-leaning と author-leaning の中身）
 │   ├─ rules/decoration-density.js / phrase-density.js
 │   └─ test/                   # 規則ごとの fires/clean fixture
-├─ packages/onajimi/                        # CLI（ESM）。ルール集は相対パスで読む
-│   ├─ bin/onajimi.js          # lint / guard / control / profile / build / eval / import
+├─ packages/onajimi/                        # CLI（ESM）。npm の onajimi
+│   ├─ bin/onajimi.js          # npm の入口。preset をパッケージ名で読み、XDG の root を渡す
+│   ├─ src/main.js             # lint / guard / control / profile / build / eval / import。preset と既定の root は入口から受け取る
 │   ├─ src/lint.js             # .textlintrc.json を読み、ルールの実体を直接渡して textlint の kernel を動かす
 │   ├─ src/prose.js            # Markdown → 地の文（位置を元に戻せる）
 │   ├─ src/profile.js          # 対数オッズ比と文統計
@@ -47,7 +48,7 @@ oh-my-onajimi/                              # Claude Code プラグインのル�
 └─ notes/
 ```
 
-root は `--root`、`ONAJIMI_ROOT`、リポジトリの順に決める。プラグインは版ごとのキャッシュに写されるので、筆者のデータはそこに置かない。
+root は `--root`、`ONAJIMI_ROOT`、入口ごとの既定（リポジトリの bin/onajimi はリポジトリ、npm の onajimi は `${XDG_DATA_HOME:-~/.local/share}/onajimi`）の順に決める。プラグインは版ごとのキャッシュに写されるので、筆者のデータはそこに置かない。
 
 ## 1. textlint のルール集
 
@@ -226,10 +227,22 @@ description: 日本語の記事を書き終えたあと、指定した筆者の�
   - dev での使用が review.md から分からなかった: model_leaning と density の行に dev の回数を出す。
 - コーパスの混入（筆者でない段落）を見つける簡単な決まりは見つからなかった。二人称（あなた）は amane の記事で 40 段落以上あり、筆者の書き方そのものだった。署名つきの見出し（by 〜）は my-2025 しかなく、もう除外している。そのため、混入はスキルの手順（dev の指摘が筆者の文でなさそうなら exclude_sections に足すよう人に伝える）に任せた。
 
+## npm に出せる形にした（2026-11-01）
+- CLI のロジックを `src/main.js` の `main({ argv, preset, defaultRoot })` に移し、preset と既定の root を入口から渡す。npm の入口は preset をパッケージ名で、リポジトリの bin/onajimi は相対パスで読む。実行時に片方を試して他方に落ちる処理は入れない。
+- ルートの package.json はプラグインのために、レジストリの固定版だけを持つ（file: や workspace: は自動の依存のインストールで使えない）。
+- preset の照合器は、前の Str ノードで途中まで合った状態を持ち越していた。model-leaning と author-leaning が太字・改行・段落をまたいで一致し、指摘の位置もずれていた。ノードごとに作り直すようにした。amane の辞書には leaning の語がないので、eval の表は変わらない。
+- Node の下限: CLI は 22（依存の prh 6.1.0 が `>=22`）。preset は 20（textlint 15.0.0 が `>=20.0.0`）。Node 20.20 と 22.23 で両方のテストが通った。
+- preset の peerDependencies は `textlint >=15.0.0` で optional にした。必須にすると、kernel を直接使う CLI を入れるだけで textlint 本体（15.8.0 と依存 86 個）まで入る。テストは kernel 13.0.0・14.0.0・15.0.0 でも通り、textlint 15.0.0 の CLI からも動いた。
+- 公開の前に残っていること:
+  - 両方の package.json から `"private": true` を外す
+  - `repository`（と `homepage`・`bugs`）を足す。README の「リポジトリ oh-my-onajimi」をリンクにする
+  - 名前の `onajimi` と `textlint-rule-preset-onajimi` は 2026-11-01 時点で npm に空きがあった（404）。公開の直前に確かめ直す
+  - preset を先に公開する（CLI は `textlint-rule-preset-onajimi@0.1.0` に依存する）
+
 ## 決まったこと
 - 最初の筆者コーパス: ama.ne.jp のブログ記事（Markdown 原稿）
 - 対照に使うモデル: Opus（主）と Gemini Flash 系（副）
-- 配布: ローカルだけ。リポジトリは private にする。npm には公開しない。
+- 配布: プラグインはローカルと private のリポジトリから。npm のパッケージは出せる形にしたが、まだ公開しない（下の節）。
 
 ## 実装の約束
 - 言語は JavaScript。textlint 側は CJS、CLI は ESM。ビルドはなし。テストは node:test。

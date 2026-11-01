@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { createMatcher } = require("./matcher");
+const { matchText } = require("./matcher");
 
 const isEntry = (value) =>
   typeof value === "object" &&
@@ -45,11 +45,10 @@ module.exports = (context, options = {}) => {
   }
   const testers = (options.allows || []).map(createTester);
   const entries = loadDictionary(path.resolve(context.getConfigBaseDir() || process.cwd(), options.dictionaryPath));
-  const matchAll = createMatcher(entries);
   return {
     async [Syntax.Str](node) {
       const text = getSource(node);
-      for (const result of await matchAll(text)) {
+      for (const result of await matchText(entries, text)) {
         if (testers.some((tester) => tester(text.slice(result.range[0], result.range[1])))) {
           continue;
         }

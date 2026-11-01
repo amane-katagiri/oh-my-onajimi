@@ -3,17 +3,51 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { defaultRoot, resolveRoot } from "../src/paths.js";
-import { makeRoot, run, writeFile } from "./helpers.js";
+import { pathToFileURL } from "node:url";
+import { dataRoot, resolveRoot } from "../src/paths.js";
+import { makeRoot, repoRoot, run, writeFile } from "./helpers.js";
 
-const wrapper = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../bin/onajimi");
+test("--root wins over ONAJIMI_ROOT, which wins over the entry point's default", () => {
+  assert.equal(resolveRoot("/a", { ONAJIMI_ROOT: "/b" }, "/c"), "/a");
+  assert.equal(resolveRoot(undefined, { ONAJIMI_ROOT: "/b" }, "/c"), "/b");
+  assert.equal(resolveRoot(undefined, { ONAJIMI_ROOT: "" }, "/c"), "/c");
+  assert.equal(resolveRoot(undefined, {}, "/c"), "/c");
+});
 
-test("--root wins over ONAJIMI_ROOT, which wins over the repository root", () => {
-  assert.equal(resolveRoot("/a", { ONAJIMI_ROOT: "/b" }), "/a");
-  assert.equal(resolveRoot(undefined, { ONAJIMI_ROOT: "/b" }), "/b");
-  assert.equal(resolveRoot(undefined, { ONAJIMI_ROOT: "" }), defaultRoot);
-  assert.equal(resolveRoot(undefined, {}), defaultRoot);
+test("the published default root follows XDG_DATA_HOME and ignores a relative one", () => {
+  assert.equal(dataRoot({ XDG_DATA_HOME: "/x" }, "/h"), "/x/onajimi");
+  assert.equal(dataRoot({}, "/h"), "/h/.local/share/onajimi");
+  assert.equal(dataRoot({ XDG_DATA_HOME: "" }, "/h"), "/h/.local/share/onajimi");
+  assert.equal(dataRoot({ XDG_DATA_HOME: "data" }, "/h"), "/h/.local/share/onajimi");
+});
+
+const runWithDefaultRoot = (defaultRoot, args) => {
+  const script = [
+    `import preset from ${JSON.stringify(pathToFileURL(path.join(repoRoot, "packages/textlint-rule-preset-onajimi/index.js")).href)};`,
+    `import { main } from ${JSON.stringify(pathToFileURL(path.join(repoRoot, "packages/onajimi/src/main.js")).href)};`,
+    `process.exitCode = await main({ argv: ${JSON.stringify(args)}, preset, defaultRoot: ${JSON.stringify(defaultRoot)} });`,
+  ].join("\n");
+  return run(["--input-type=module", "-e", script], { command: [process.execPath], env: { ONAJIMI_ROOT: "" } });
+};
+
+test("only init and import create the default root; other commands name the missing author directory", () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "onajimi-test-"));
+  const defaultRoot = path.join(base, "share/onajimi");
+  const draft = writeFile(base, "draft.md", "本文。\n");
+  const missing = runWithDefaultRoot(defaultRoot, ["lint", "--author", "fresh", draft]);
+  assert.equal(missing.code, 2);
+  assert.ok(missing.stderr.includes(`${path.join(defaultRoot, "authors/fresh")} がない。onajimi init --author fresh`), missing.stderr);
+  assert.equal(fs.existsSync(defaultRoot), false);
+  const init = runWithDefaultRoot(defaultRoot, ["init", "--author", "fresh"]);
+  assert.equal(init.code, 0, init.stderr);
+  assert.deepEqual(fs.readdirSync(path.join(defaultRoot, "authors/fresh")).sort(), ["corpus.yml", "profile.yml"]);
+});
+
+test("the repository entry defaults to the repository root", () => {
+  const result = run(["corpus", "--author", "nobody"], { env: { ONAJIMI_ROOT: "" } });
+  assert.equal(result.code, 2);
+  assert.ok(result.stderr.includes(path.join(repoRoot, "authors/nobody")), result.stderr);
+  assert.ok(run([]).stderr.includes(`それもなければ ${repoRoot}）`));
 });
 
 test("init writes under ONAJIMI_ROOT when --root is absent", () => {
@@ -51,12 +85,12 @@ test("import copies the profile but not the corpus, then builds", () => {
   assert.match(again.stderr, /はもうある/);
 });
 
-test("the plugin wrapper lints from any working directory", () => {
+test("the repository entry lints from any working directory", () => {
   const from = sourceRoot();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "onajimi-test-"));
   run(["import", "--root", root, "--from", from, "--author", "demo"]);
   const file = writeFile(root, "draft.md", "# 見出し\n\n設定が静かに壊れていた。\n");
-  const result = run(["lint", "--root", root, "--author", "demo", file], { command: [wrapper], cwd: os.tmpdir() });
+  const result = run(["lint", "--root", root, "--author", "demo", file], { cwd: os.tmpdir() });
   assert.equal(result.code, 1, result.stderr);
   assert.match(result.stdout, /^3:4 model-leaning /u);
 });

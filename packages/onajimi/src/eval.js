@@ -70,7 +70,7 @@ export const controlDocsOf = (root, author, runner, posts) => {
     .map(({ post, file }) => ({ slug: post.slug, text: stripTitle(fs.readFileSync(file, "utf8"), post.meta) }));
 };
 
-export const runEval = async ({ root, author, set = "test", details = false }) => {
+export const runEval = async ({ root, author, preset, set = "test", details = false }) => {
   if (!SETS.includes(set)) {
     throw new Error(`--set は ${SETS.join("・")} のどれか`);
   }
@@ -79,7 +79,7 @@ export const runEval = async ({ root, author, set = "test", details = false }) =
   }
   const corpus = loadCorpus(root, author);
   const options = { skipParagraphs: corpus.config.skipParagraphs };
-  const lintText = await createAuthorLinter(root, author);
+  const lintText = await createAuthorLinter(root, author, preset);
   const authorDocs = authorDocsOf(corpus[set]);
   const rows = [{ label: `誤検出: 筆者 ${set}`, ...(await scoreDocs(lintText, authorDocs, options)) }];
   for (const runner of Object.keys(corpus.config.control.runners)) {

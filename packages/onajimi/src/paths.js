@@ -1,9 +1,10 @@
+import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-export const defaultRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+export const dataRoot = (env = process.env, home = os.homedir()) =>
+  path.join(env.XDG_DATA_HOME && path.isAbsolute(env.XDG_DATA_HOME) ? env.XDG_DATA_HOME : path.join(home, ".local", "share"), "onajimi");
 
-export const resolveRoot = (explicit, env = process.env) => path.resolve(explicit ?? (env.ONAJIMI_ROOT || defaultRoot));
+export const resolveRoot = (explicit, env, defaultRoot) => path.resolve(explicit ?? (env.ONAJIMI_ROOT || defaultRoot));
 
 export const authorDir = (root, author) => {
   if (!/^[A-Za-z0-9_-]+$/.test(author)) {

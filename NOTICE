@@ -1,9 +1,9 @@
-oh-my-onajimi
+onajimi
 
-packages/onajimi/src/guard.js contains regular expressions and word lists
-ported from yomiyasu (scripts/yomiyasu_diff.py): the negation markers, the
-masked obligation/conjecture/idiomatic forms, the numeral-kanji counters and
-excluded words, and the kanji numeral reader.
+src/guard.js contains regular expressions and word lists ported from yomiyasu
+(scripts/yomiyasu_diff.py): the negation markers, the masked
+obligation/conjecture/idiomatic forms, the numeral-kanji counters and excluded
+words, and the kanji numeral reader.
 
   yomiyasu
   https://github.com/nanaism/yomiyasu
@@ -32,11 +32,11 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-======================================================================
+textlint-rule-preset-onajimi
 
-packages/textlint-rule-preset-onajimi/rules/token-leaning.js ports the
-dictionary loading, the allows matching and the morpheme-match-textlint wiring
-of the no-ai-words rule from textlint-rule-preset-ai-words-ja.
+rules/token-leaning.js ports the dictionary loading, the allows matching and
+the morpheme-match-textlint wiring of the no-ai-words rule from
+textlint-rule-preset-ai-words-ja.
 
   textlint-rule-preset-ai-words-ja
   https://github.com/p1ass/textlint-rule-preset-ai-words-ja

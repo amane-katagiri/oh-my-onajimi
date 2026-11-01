@@ -9,7 +9,7 @@ export const NEEDS_YES = 5;
 
 const splitText = (split) => `profile ${split.profile.length} 本、dev ${split.dev.length} 本、test ${split.test.length} 本、holdout ${split.holdout.length} 本`;
 
-export const runPipeline = async ({ root, author, limit, delaySeconds, estimate = false, yes = false, log = () => {}, say = () => {} }) => {
+export const runPipeline = async ({ root, author, preset, limit, delaySeconds, estimate = false, yes = false, log = () => {}, say = () => {} }) => {
   const planned = computeSplit({ root, author });
   const corpus = loadCorpus(root, author, { split: planned.split });
   const runners = Object.keys(corpus.config.control.runners);
@@ -53,7 +53,7 @@ export const runPipeline = async ({ root, author, limit, delaySeconds, estimate 
   const profile = await runProfile({ root, author });
   say(`profile: ${Object.entries(profile.sides).map(([name, side]) => `${name} ${side.docs} 本`).join("、")}、候補 ${profile.strong.length} 件`);
   build({ root, author });
-  const review = await writeReview({ root, author });
+  const review = await writeReview({ root, author, preset });
   say(`review: ${path.relative(process.cwd(), review.file)}（${review.lines} 行）`);
   return 0;
 };

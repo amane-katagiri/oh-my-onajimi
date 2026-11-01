@@ -5,7 +5,8 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const bin = path.resolve(here, "../bin/onajimi.js");
+export const repoRoot = path.resolve(here, "../../..");
+export const bin = path.join(repoRoot, "bin/onajimi");
 
 export const makeRoot = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "onajimi-test-"));
@@ -19,7 +20,7 @@ export const writeFile = (root, name, text) => {
   return file;
 };
 
-export const run = (args, { env, cwd, command = [process.execPath, bin] } = {}) => {
+export const run = (args, { env, cwd, command = [bin] } = {}) => {
   const [file, ...head] = command;
   const result = spawnSync(file, [...head, ...args], { encoding: "utf8", cwd, env: env === undefined ? process.env : { ...process.env, ...env } });
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };

@@ -14,10 +14,11 @@
     "src/",
     "templates/",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "README.md"
   ],
   "engines": {
-    "node": ">=26"
+    "node": ">=22"
   },
   "scripts": {
     "test": "node --test \"test/*.test.js\""
@@ -28,9 +29,9 @@
     "@textlint/textlint-plugin-markdown": "15.8.0",
     "@textlint/textlint-plugin-text": "15.8.0",
     "kuromojin": "3.0.1",
-    "morpheme-match-textlint": "2.0.6",
     "sentence-splitter": "5.0.1",
     "textlint-rule-max-ten": "5.0.0",
+    "textlint-rule-preset-onajimi": "0.1.0",
     "textlint-rule-prh": "6.1.1",
     "textlint-rule-sentence-length": "5.2.1",
     "textlint-util-to-string": "3.3.4",

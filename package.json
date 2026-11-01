@@ -6,7 +6,7 @@
   "author": "Amane Katagiri",
   "type": "module",
   "engines": {
-    "node": ">=26"
+    "node": ">=22"
   },
   "scripts": {
     "test": "node --test \"packages/*/test/*.test.js\""

@@ -1,9 +1,9 @@
-oh-my-onajimi
+onajimi
 
-packages/onajimi/src/guard.js contains regular expressions and word lists
-ported from yomiyasu (scripts/yomiyasu_diff.py): the negation markers, the
-masked obligation/conjecture/idiomatic forms, the numeral-kanji counters and
-excluded words, and the kanji numeral reader.
+src/guard.js contains regular expressions and word lists ported from yomiyasu
+(scripts/yomiyasu_diff.py): the negation markers, the masked
+obligation/conjecture/idiomatic forms, the numeral-kanji counters and excluded
+words, and the kanji numeral reader.
 
   yomiyasu
   https://github.com/nanaism/yomiyasu

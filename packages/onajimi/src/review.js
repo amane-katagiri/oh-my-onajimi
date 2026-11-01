@@ -180,7 +180,7 @@ export const devStats = async (corpus, proposal) => {
   return stats;
 };
 
-export const writeReview = async ({ root, author }) => {
+export const writeReview = async ({ root, author, preset }) => {
   const dir = corpusPaths(root, author).profile;
   const read = (name) => {
     const file = path.join(dir, name);
@@ -193,7 +193,7 @@ export const writeReview = async ({ root, author }) => {
   const thresholds = read("thresholds.yml");
   const { stale } = build({ root, author, check: true });
   const corpus = loadCorpus(root, author);
-  const { rows: evalRows, findings } = await runEval({ root, author, set: "dev", details: true });
+  const { rows: evalRows, findings } = await runEval({ root, author, preset, set: "dev", details: true });
   const dev = await devStats(corpus, proposal);
   const text = renderReview({ author, proposal, thresholds, evalRows, findings, stale, dev });
   const file = path.join(dir, "review.md");

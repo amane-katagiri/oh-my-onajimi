@@ -9,9 +9,9 @@
 ```
 .claude-plugin/plugin.json               Claude Code プラグインのマニフェスト
 .claude-plugin/marketplace.json          ローカルで試すためのマーケットプレイス（このディレクトリ自体をプラグインとして載せる）
-bin/onajimi                              CLI の入口（プラグインが有効なあいだ Bash の PATH に入る）
-packages/textlint-rule-preset-onajimi/  textlint のルール集（model-leaning / author-leaning / decoration-density / phrase-density）。単体でも配れる形
-packages/onajimi/                        CLI（build / lint / guard など）。ルール集は相対パスで読む
+bin/onajimi                              リポジトリとプラグインの CLI の入口（プラグインが有効なあいだ Bash の PATH に入る）。相対パスの preset と、既定の root としてこのリポジトリを CLI に渡す
+packages/textlint-rule-preset-onajimi/  textlint のルール集（model-leaning / author-leaning / decoration-density / phrase-density）。npm の textlint-rule-preset-onajimi
+packages/onajimi/                        CLI（build / lint / guard など）。npm の onajimi。bin/onajimi.js は preset をパッケージ名で読む
 authors/<name>/profile.yml               人が編集する唯一の元データ
 authors/<name>/corpus.yml                コーパスの選び方・除外・対照の生成コマンド・プロファイラの設定
 authors/<name>/split.yml                 プロファイル用・dev 用・テスト用・holdout の記事（onajimi split が作り、2 回目からは新しい記事を holdout に足すだけ）
@@ -40,7 +40,7 @@ bin/onajimi import --root ~/.claude/plugins/data/onajimi-oh-my-onajimi --from . 
 
 `import` は `--from` の root から profile.yml・corpus.yml・split.yml・profile/（`_full/` を除く）を写し、写した先で build する。corpus/（記事と対照）は写さない。写した先にもうあれば止まる。新しい筆者は `init --root <データディレクトリ>` から作る。
 
-CLI の root（`authors/` のあるディレクトリ）は、`--root`、環境変数 `ONAJIMI_ROOT`、このリポジトリの順に決まる。
+CLI の root（`authors/` のあるディレクトリ）は、`--root`、環境変数 `ONAJIMI_ROOT`、このリポジトリの順に決まる（npm で入れた `onajimi` では最後が `${XDG_DATA_HOME:-~/.local/share}/onajimi`）。`init` と `import` 以外のコマンドは、筆者のディレクトリがなければエラーで止まる。
 
 ## 新しい筆者のプロファイルを作る
 
@@ -59,7 +59,7 @@ bin/onajimi eval --author alice --set dev --details
 
 ## 使い方
 
-Node 26 以降。
+Node 22 以降（preset だけなら Node 20 以降）。
 
 ```sh
 npm ci
@@ -135,6 +135,14 @@ bin/onajimi eval --author amane [--set dev|profile|test|holdout] [--details]   #
 | `control` | 対照のプロンプトのひな形と runner。runner には任意で `price`（出力 100 万トークンあたりの USD。見積もりに使う） |
 | `profile` | `alpha0`・`min_docs`・`min_count`・`proposal_z`・`proposal_max_author_docs`・`rate_z`・`proposal_limit`・`min_chars`・`emphasis_min_marks`・`orthography_min_count`・`orthography_min_share`・`orthography_z`・`orthography_limit`・`hint_z`・`hint_limit` |
 
+## npm パッケージ
+
+`packages/` の 2 つは、npm に出せる形にしてある（まだ `"private": true` で、公開していない）。説明は [packages/onajimi/README.md](packages/onajimi/README.md) と [packages/textlint-rule-preset-onajimi/README.md](packages/textlint-rule-preset-onajimi/README.md)。
+
+- CLI のロジックは `packages/onajimi/src/main.js` の `main({ argv, preset, defaultRoot })` にある。npm の入口（`packages/onajimi/bin/onajimi.js`）は preset をパッケージ名で読み、このリポジトリの `bin/onajimi` は相対パスで読んで渡す。テストは `bin/onajimi` を動かす。
+- ルートの package.json はプラグインの依存（レジストリにある版を固定したものだけ）で、packages/ の 2 つには依存しない。CLI と preset の依存を変えたら、ルートの dependencies にも同じ版を足す（食い違うとテストが落ちる）。
+- 中身を確かめるには、両方を `npm pack` して同じディレクトリに `npm install <CLI の tgz> <preset の tgz>` する。
+
 ## ライセンス
 
-MIT（[LICENSE](LICENSE)）。`packages/onajimi/src/guard.js` の一部は yomiyasu（MIT）、`packages/textlint-rule-preset-onajimi/rules/token-leaning.js` の一部は textlint-rule-preset-ai-words-ja（MIT）からの移植。[NOTICE](NOTICE) を参照。
+MIT（[LICENSE](LICENSE)）。`packages/onajimi/src/guard.js` の一部は yomiyasu（MIT）、`packages/textlint-rule-preset-onajimi/rules/token-leaning.js` の一部は textlint-rule-preset-ai-words-ja（MIT）からの移植。[NOTICE](NOTICE) を参照。ルートの NOTICE は `packages/onajimi/NOTICE` と `packages/textlint-rule-preset-onajimi/NOTICE` をつないだもので、食い違うとテストが落ちる。

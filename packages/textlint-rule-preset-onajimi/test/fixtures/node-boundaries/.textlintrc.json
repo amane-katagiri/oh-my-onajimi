@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "preset-onajimi": {
+      "model-leaning": { "dictionaryPath": "dict.json" },
+      "phrase-density": {
+        "entries": [
+          {
+            "tokens": [{ "surface_form": "静か" }, { "surface_form": "に" }, { "basic_form": "壊れる" }],
+            "max_per_1000": 0,
+            "message": "「静かに壊れる」が多い。"
+          }
+        ]
+      }
+    }
+  }
+}

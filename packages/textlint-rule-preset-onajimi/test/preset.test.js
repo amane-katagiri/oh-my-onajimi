@@ -100,3 +100,14 @@ test("decoration-density fires once when emphasis leans on bold", async () => {
 test("decoration-density is clean on italic-leaning emphasis and colon-free bold items", async () => {
   assert.deepEqual(await lintFixture("decoration-emphasis", "clean.md"), []);
 });
+
+test("leaning and density entries do not match across emphasis, inline code, line breaks or paragraphs", async () => {
+  assert.deepEqual(await lintFixture("node-boundaries", "split.md"), []);
+});
+
+test("a partial match in one paragraph does not move the next finding", async () => {
+  const messages = await lintFixture("node-boundaries", "mixed.md");
+  const leaning = messages.filter((m) => m.ruleId === "onajimi/model-leaning");
+  assert.deepEqual(leaning.map((m) => [m.line, m.column]), [[5, 11]]);
+  assert.equal(messages.filter((m) => m.ruleId === "onajimi/phrase-density").length, 1);
+});

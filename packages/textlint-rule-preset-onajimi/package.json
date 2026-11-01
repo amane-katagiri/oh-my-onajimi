@@ -16,10 +16,11 @@
     "index.js",
     "rules/",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "README.md"
   ],
   "engines": {
-    "node": ">=20.18.0"
+    "node": ">=20"
   },
   "scripts": {
     "test": "node --test \"test/*.test.js\""
@@ -27,6 +28,14 @@
   "dependencies": {
     "kuromojin": "3.0.1",
     "morpheme-match-textlint": "2.0.6"
+  },
+  "peerDependencies": {
+    "textlint": ">=15.0.0"
+  },
+  "peerDependenciesMeta": {
+    "textlint": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@textlint/kernel": "15.8.0",

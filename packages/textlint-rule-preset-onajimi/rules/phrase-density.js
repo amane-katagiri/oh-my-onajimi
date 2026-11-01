@@ -1,6 +1,6 @@
 "use strict";
 
-const { createMatcher } = require("./matcher");
+const { matchText } = require("./matcher");
 
 const SKIPPED = ["BlockQuote", "Table", "Html", "Header", "CodeBlock", "Yaml"];
 
@@ -20,8 +20,7 @@ module.exports = (context, options = {}) => {
       }
       chars += [...node.value.replace(/\s/g, "")].length;
       pending.push(
-        // 照合器は前の Str で途中まで合った状態を持ち越すので、ノードごとに作り直す。
-        createMatcher(entries)(node.value).then((results) => {
+        matchText(entries, node.value).then((results) => {
           for (const result of results) {
             counts[entries.indexOf(result.dict)] += 1;
           }
