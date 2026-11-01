@@ -1,6 +1,6 @@
 import { parse } from "@textlint/markdown-to-ast";
 
-const FRONTMATTER_LINE = /^[A-Za-z_][A-Za-z0-9_-]*:(?:\s|$)/;
+export const FRONTMATTER_LINE = /^[A-Za-z_][A-Za-z0-9_-]*:(?:\s|$)/;
 
 export const blankLooseFrontmatter = (text) => {
   const lines = text.split("\n");
@@ -12,6 +12,8 @@ export const blankLooseFrontmatter = (text) => {
   return [...block.map(() => ""), ...lines.slice(block.length)].join("\n");
 };
 
+export const parseMarkdown = (markdown) => parse(blankLooseFrontmatter(markdown));
+
 export const proseText = (markdown) => {
   const pieces = [];
   const walk = (node) => {
@@ -22,6 +24,76 @@ export const proseText = (markdown) => {
       walk(child);
     }
   };
-  walk(parse(blankLooseFrontmatter(markdown)));
+  walk(parseMarkdown(markdown));
   return pieces.join("\n");
+};
+
+const NOT_ANALYZED = new Set(["BlockQuote", "Table", "Html", "Header", "Code", "CodeBlock", "Yaml"]);
+const REGEXP_LITERAL = /^\/(.+)\/([gimsuy]*)$/su;
+
+export const nodeText = (node) => {
+  if (node.type === "Str" || node.type === "Code") {
+    return node.value;
+  }
+  return (node.children ?? []).map(nodeText).join("");
+};
+
+const paragraphTester = (pattern) => {
+  const literal = REGEXP_LITERAL.exec(pattern);
+  if (literal) {
+    const regExp = new RegExp(literal[1], literal[2].replace("g", ""));
+    return (text) => regExp.test(text);
+  }
+  return (text) => text === pattern;
+};
+
+export const countChars = (text) => [...text.replace(/\s/gu, "")].length;
+
+export const analyzeProse = (markdown, { skipParagraphs = [] } = {}) => {
+  const testers = skipParagraphs.map(paragraphTester);
+  const strs = [];
+  const headings = [];
+  const walk = (node, skipped, inQuote) => {
+    if (node.type === "Header" && !inQuote) {
+      headings.push({ depth: node.depth, text: nodeText(node).trim() });
+    }
+    const skipHere = skipped || NOT_ANALYZED.has(node.type) || (node.type === "Paragraph" && testers.some((test) => test(nodeText(node).trim())));
+    if (node.type === "Str" && !skipHere) {
+      strs.push(node.value);
+    }
+    for (const child of node.children ?? []) {
+      walk(child, skipHere, inQuote || node.type === "BlockQuote");
+    }
+  };
+  walk(parseMarkdown(markdown), false, false);
+  return { strs, headings, chars: strs.reduce((sum, text) => sum + countChars(text), 0) };
+};
+
+const HEADING_LINE = /^#{1,6}\s+(.*?)\s*#*\s*$/u;
+const BOLD_ONLY_LINE = /^(\*\*|__)(?:(?!\1).)+\1$/u;
+
+const normalizeTitle = (text) => text.normalize("NFKC").replace(/[\s*_`#]/gu, "").toLowerCase();
+
+export const stripTitle = (markdown, { title, summary }) => {
+  const lines = blankLooseFrontmatter(markdown).split("\n");
+  const nextLine = (from) => {
+    let at = from;
+    while (at < lines.length && lines[at].trim() === "") {
+      at += 1;
+    }
+    return at;
+  };
+  const first = nextLine(0);
+  const heading = HEADING_LINE.exec(lines[first] ?? "");
+  if (!title || !heading || normalizeTitle(heading[1]) !== normalizeTitle(title)) {
+    return lines.join("\n");
+  }
+  lines[first] = "";
+  const second = nextLine(first + 1);
+  const line = (lines[second] ?? "").trim();
+  const subheading = HEADING_LINE.exec(line);
+  if (BOLD_ONLY_LINE.test(line) || (summary && subheading && normalizeTitle(subheading[1]) === normalizeTitle(summary))) {
+    lines[second] = "";
+  }
+  return lines.join("\n");
 };

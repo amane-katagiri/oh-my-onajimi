@@ -1,0 +1,66 @@
+note: >-
+  tech と ugoki を合わせた「記事」のプロファイル用。lily（小説）は見出しがなく対照の作り方が違うので、別に作る。
+  引用ブロック・コードブロック・表・HTML・見出し・frontmatter は解析しない（prose.js の analyzeProse）。
+
+select:
+  author: Amane Katagiri
+  categories: [tech, ugoki]
+  since: 2020-01-01
+
+test_ratio: 0.25
+
+exclude_sections:
+  - post: my-2025
+    from_heading: あまねけ！2025 by 色がきれいなよもぎもち（おまけ）
+
+skip_paragraphs:
+  - "[TOC]"
+  - "/^\\/\\*[\\s\\S]*\\*\\/$/"
+
+control:
+  prompt: |-
+    次のタイトル・見出し構成・内容の要点で、ブログ記事を Markdown で書いてください。本文は約{chars}字（見出しを除く）です。{chars}字の±20%に収めてください。見出しはこの構成に従ってください。本文だけを出力してください。
+
+    タイトル: {title}
+    サブタイトル: {summary}
+
+    見出し構成:
+    {outline}
+
+    内容の要点: {points}
+  delay_seconds: 20
+  timeout_seconds: 900
+  retry_delays_seconds: [30, 60, 120]
+  runners:
+    opus:
+      model: opus
+      command:
+        - claude
+        - -p
+        - --model
+        - opus
+        - --tools
+        - ""
+        - --setting-sources
+        - ""
+        - --strict-mcp-config
+        - --disable-slash-commands
+        - --no-session-persistence
+        - --output-format
+        - json
+      output: json
+      result_field: result
+      meta_fields: [total_cost_usd, duration_api_ms, usage, modelUsage]
+      rate_limit: "rate.?limit|usage limit|429"
+      unavailable: "overloaded|529|503"
+    gemini:
+      api: gemini
+      model: gemini-3.8-flash
+      key_file: ~/.gemini_api_key
+
+profile:
+  alpha0: 1000
+  min_docs: 2
+  min_count: 3
+  proposal_z: -3
+  proposal_limit: 40

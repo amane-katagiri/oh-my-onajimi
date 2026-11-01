@@ -29,15 +29,18 @@ export const formatMessages = (messages) =>
     .sort((a, b) => a.line - b.line || a.column - b.column)
     .map((m) => `${m.line}:${m.column} ${ruleName(m.ruleId)} ${rewriteMessage(m.ruleId, m.message)}`);
 
-export const lint = async ({ root, author, file }) => {
+export const createAuthorLinter = async (root, author) => {
   const configFilePath = path.join(generatedDir(root, author), ".textlintrc.json");
   if (!fs.existsSync(configFilePath)) {
     throw new Error(`${path.relative(process.cwd(), configFilePath)} がない。先に onajimi build --author ${author} を実行する。`);
   }
   const descriptor = await loadTextlintrc({ configFilePath, node_modulesDir: nodeModulesDir });
   const linter = createLinter({ descriptor });
+  return async (text, filePath) => (await linter.lintText(blankLooseFrontmatter(text), filePath)).messages;
+};
+
+export const lint = async ({ root, author, file }) => {
+  const lintText = await createAuthorLinter(root, author);
   const filePath = path.resolve(file);
-  const text = blankLooseFrontmatter(fs.readFileSync(filePath, "utf8"));
-  const result = await linter.lintText(text, filePath);
-  return formatMessages(result.messages);
+  return formatMessages(await lintText(fs.readFileSync(filePath, "utf8"), filePath));
 };

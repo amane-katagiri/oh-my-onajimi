@@ -1,0 +1,204 @@
+import fs from "node:fs";
+import path from "node:path";
+import YAML from "yaml";
+import { authorDir } from "./paths.js";
+import { FRONTMATTER_LINE } from "./prose.js";
+
+const fail = (where, problem) => {
+  throw new Error(`corpus.yml の ${where}: ${problem}`);
+};
+
+const TOP_LEVEL_KEYS = new Set(["note", "select", "test_ratio", "exclude_sections", "skip_paragraphs", "control", "profile"]);
+
+const PROFILE_DEFAULTS = { alpha0: 1000, min_docs: 2, min_count: 3, proposal_z: -3, proposal_limit: 40 };
+
+export const parseCorpusConfig = (text) => {
+  const config = YAML.parse(text) ?? {};
+  for (const key of Object.keys(config)) {
+    if (!TOP_LEVEL_KEYS.has(key)) {
+      fail("最上位", `知らないキー ${key}`);
+    }
+  }
+  const select = config.select ?? fail("select", "author, categories, since が要る");
+  if (typeof select.author !== "string") {
+    fail("select.author", "文字列で書く");
+  }
+  if (!Array.isArray(select.categories) || select.categories.length === 0) {
+    fail("select.categories", "1 つ以上の配列で書く");
+  }
+  const since = String(select.since ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(since)) {
+    fail("select.since", "YYYY-MM-DD で書く");
+  }
+  const testRatio = config.test_ratio ?? 0.25;
+  if (!(testRatio > 0 && testRatio < 1)) {
+    fail("test_ratio", "0 より大きく 1 より小さい数で書く");
+  }
+  const excludeSections = (config.exclude_sections ?? []).map((entry, index) => {
+    if (typeof entry?.post !== "string" || typeof entry?.from_heading !== "string") {
+      fail(`exclude_sections[${index}]`, "post と from_heading が要る");
+    }
+    return { post: entry.post, fromHeading: entry.from_heading };
+  });
+  const skipParagraphs = (config.skip_paragraphs ?? []).map((pattern, index) => {
+    if (typeof pattern !== "string" || pattern === "") {
+      fail(`skip_paragraphs[${index}]`, "文字列で書く");
+    }
+    return pattern;
+  });
+  const control = config.control ?? {};
+  const runners = control.runners ?? {};
+  for (const [name, runner] of Object.entries(runners)) {
+    if (!/^[A-Za-z0-9_-]+$/u.test(name)) {
+      fail(`control.runners.${name}`, "名前に使えない文字がある");
+    }
+    if (runner?.api !== undefined) {
+      if (runner.api !== "gemini") {
+        fail(`control.runners.${name}.api`, "gemini だけを扱う");
+      }
+      continue;
+    }
+    if (!Array.isArray(runner?.command) || runner.command.length === 0 || runner.command.some((arg) => typeof arg !== "string")) {
+      fail(`control.runners.${name}.command`, "文字列の配列で書く");
+    }
+    if (runner.output !== undefined && !["text", "json"].includes(runner.output)) {
+      fail(`control.runners.${name}.output`, "text か json");
+    }
+  }
+  const retry = control.retry_delays_seconds;
+  if (retry !== undefined && (!Array.isArray(retry) || retry.some((value) => typeof value !== "number" || value < 0))) {
+    fail("control.retry_delays_seconds", "0 以上の秒数の配列で書く");
+  }
+  if (Object.keys(runners).length > 0 && typeof control.prompt !== "string") {
+    fail("control.prompt", "プロンプトのひな形が要る");
+  }
+  return {
+    select: { author: select.author, categories: select.categories.map(String), since },
+    testRatio,
+    excludeSections,
+    skipParagraphs,
+    control: {
+      prompt: control.prompt,
+      delaySeconds: control.delay_seconds ?? 0,
+      timeoutSeconds: control.timeout_seconds ?? 900,
+      retryDelaysSeconds: control.retry_delays_seconds ?? [30, 60, 120],
+      runners,
+    },
+    profile: { ...PROFILE_DEFAULTS, ...(config.profile ?? {}) },
+  };
+};
+
+export const parsePost = (slug, text) => {
+  const lines = text.split("\n");
+  const meta = {};
+  for (const line of lines) {
+    if (!FRONTMATTER_LINE.test(line)) {
+      break;
+    }
+    const at = line.indexOf(":");
+    meta[line.slice(0, at)] = line.slice(at + 1).trim();
+  }
+  return { slug, meta, text };
+};
+
+export const cutSection = (text, heading) => {
+  const lines = text.split("\n");
+  const at = lines.findIndex((line) => /^#{1,6}\s/u.test(line) && line.replace(/^#{1,6}\s+/u, "").trim() === heading);
+  return at === -1 ? null : lines.slice(0, at).join("\n");
+};
+
+export const applyExclusions = (post, excludeSections) => {
+  let { text } = post;
+  for (const { post: slug, fromHeading } of excludeSections) {
+    if (slug !== post.slug) {
+      continue;
+    }
+    const cut = cutSection(text, fromHeading);
+    if (cut === null) {
+      throw new Error(`corpus.yml の exclude_sections: ${slug} に見出し「${fromHeading}」がない`);
+    }
+    text = cut;
+  }
+  return { ...post, text };
+};
+
+const postDate = (post) => (post.meta.date ?? "").slice(0, 10);
+
+export const selectPosts = (posts, config) =>
+  posts.filter(
+    (post) =>
+      post.meta.author === config.select.author &&
+      config.select.categories.includes(post.meta.category) &&
+      postDate(post) >= config.select.since,
+  );
+
+export const splitByDate = (posts, testRatio) => {
+  const ordered = [...posts].sort((a, b) => (a.meta.date ?? "").localeCompare(b.meta.date ?? "") || a.slug.localeCompare(b.slug));
+  const testSize = Math.ceil(ordered.length * testRatio);
+  const cut = ordered.length - testSize;
+  return {
+    profile: ordered.slice(0, cut).map((post) => post.slug),
+    test: ordered.slice(cut).map((post) => post.slug),
+  };
+};
+
+export const corpusPaths = (root, author) => {
+  const dir = authorDir(root, author);
+  return {
+    config: path.join(dir, "corpus.yml"),
+    split: path.join(dir, "split.yml"),
+    posts: path.join(dir, "corpus", "post"),
+    control: path.join(dir, "corpus", "_control"),
+    profile: path.join(dir, "profile"),
+  };
+};
+
+export const loadCorpusConfig = (root, author) => {
+  const { config } = corpusPaths(root, author);
+  if (!fs.existsSync(config)) {
+    throw new Error(`${path.relative(process.cwd(), config)} がない`);
+  }
+  return parseCorpusConfig(fs.readFileSync(config, "utf8"));
+};
+
+export const loadPosts = (root, author) => {
+  const dir = corpusPaths(root, author).posts;
+  if (!fs.existsSync(dir)) {
+    throw new Error(`${path.relative(process.cwd(), dir)} がない。筆者の記事を先に取得する。`);
+  }
+  return fs
+    .readdirSync(dir)
+    .filter((name) => name.endsWith(".md"))
+    .sort()
+    .map((name) => parsePost(name.slice(0, -3), fs.readFileSync(path.join(dir, name), "utf8")));
+};
+
+export const writeSplit = ({ root, author }) => {
+  const config = loadCorpusConfig(root, author);
+  const target = corpusPaths(root, author).split;
+  if (fs.existsSync(target)) {
+    throw new Error(`${path.relative(process.cwd(), target)} はもうある。分け直すなら消してから実行する。`);
+  }
+  const split = splitByDate(selectPosts(loadPosts(root, author), config), config.testRatio);
+  fs.writeFileSync(target, YAML.stringify(split));
+  return split;
+};
+
+export const loadCorpus = (root, author) => {
+  const config = loadCorpusConfig(root, author);
+  const splitPath = corpusPaths(root, author).split;
+  if (!fs.existsSync(splitPath)) {
+    throw new Error(`${path.relative(process.cwd(), splitPath)} がない。先に onajimi split --author ${author} を実行する。`);
+  }
+  const split = YAML.parse(fs.readFileSync(splitPath, "utf8"));
+  const bySlug = new Map(loadPosts(root, author).map((post) => [post.slug, post]));
+  const pick = (slugs) =>
+    slugs.map((slug) => {
+      const post = bySlug.get(slug);
+      if (!post) {
+        throw new Error(`split.yml の記事 ${slug} がコーパスにない`);
+      }
+      return applyExclusions(post, config.excludeSections);
+    });
+  return { config, profile: pick(split.profile ?? []), test: pick(split.test ?? []) };
+};
